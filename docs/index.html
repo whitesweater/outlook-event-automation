@@ -1,149 +1,198 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Outlook Event Automation</title>
-  <meta name="description" content="An always-on mail-to-calendar automation agent for Outlook, Gmail, AI extraction, and calendar writes.">
+  <title>Outlook Event Automation | 邮件活动自动入日程</title>
+  <meta name="description" content="一个把 Outlook/Gmail 活动邮件自动抽取为日历事件的常驻服务，面向用户解释使用方式，也面向开发者解释技术实现。">
   <style>
     :root {
       color-scheme: light;
-      --bg: #f7f8f6;
-      --ink: #18211f;
-      --muted: #5f6b66;
-      --line: #dce2dc;
-      --surface: #ffffff;
-      --teal: #0f766e;
-      --blue: #2563eb;
-      --amber: #b7791f;
-      --coral: #c2410c;
-      --green: #15803d;
-      --shadow: 0 18px 55px rgba(24, 33, 31, 0.11);
+      --paper: #f6f8fb;
+      --paper-2: #ffffff;
+      --ink: #15191e;
+      --muted: #65706f;
+      --line: #d9e1ea;
+      --white: #ffffff;
+      --blue: #2156c8;
+      --teal: #08756f;
+      --green: #247447;
+      --amber: #b36b00;
+      --coral: #bf3f2f;
+      --violet: #5f4bb6;
+      --shadow: 0 24px 70px rgba(21, 25, 30, 0.13);
+      --soft: 0 12px 35px rgba(21, 25, 30, 0.08);
     }
 
     * {
       box-sizing: border-box;
     }
 
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
       margin: 0;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at 9% 0%, rgba(33, 86, 200, 0.12), transparent 27rem),
+        radial-gradient(circle at 82% 12%, rgba(8, 117, 111, 0.12), transparent 26rem),
+        radial-gradient(circle at 74% 42%, rgba(191, 63, 47, 0.10), transparent 21rem),
+        var(--paper);
       color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.55;
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+      letter-spacing: 0;
     }
 
     a {
       color: inherit;
     }
 
-    .shell {
-      min-height: 100vh;
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.94em;
     }
 
     .nav {
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 50;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 20px;
-      padding: 18px clamp(18px, 5vw, 72px);
-      background: rgba(247, 248, 246, 0.86);
-      border-bottom: 1px solid rgba(220, 226, 220, 0.8);
-      backdrop-filter: blur(16px);
+      gap: 22px;
+      padding: 16px clamp(18px, 4vw, 72px);
+      background: rgba(246, 248, 251, 0.86);
+      border-bottom: 1px solid rgba(217, 225, 234, 0.82);
+      backdrop-filter: blur(18px);
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      font-weight: 760;
+      min-width: max-content;
+      font-weight: 800;
     }
 
     .mark {
-      width: 30px;
-      height: 30px;
+      width: 34px;
+      height: 34px;
       border-radius: 8px;
       display: grid;
       place-items: center;
       background: var(--ink);
-      color: #fff;
-      font-size: 15px;
-    }
-
-    .nav a {
-      color: var(--muted);
-      text-decoration: none;
+      color: var(--paper-2);
       font-size: 14px;
-      font-weight: 650;
+      box-shadow: var(--soft);
     }
 
     .links {
       display: flex;
-      gap: 18px;
       align-items: center;
-      flex-wrap: wrap;
       justify-content: flex-end;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .links a {
+      color: #3f4948;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 720;
+    }
+
+    .links a:hover {
+      color: var(--blue);
     }
 
     .hero {
       display: grid;
-      grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
-      gap: clamp(26px, 5vw, 64px);
+      grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr);
       align-items: center;
-      padding: clamp(48px, 8vw, 96px) clamp(18px, 5vw, 72px) 42px;
+      gap: clamp(30px, 5vw, 70px);
+      min-height: calc(100vh - 67px);
+      padding: clamp(48px, 7vw, 98px) clamp(18px, 4vw, 72px) 54px;
     }
 
     .eyebrow {
       display: inline-flex;
-      gap: 8px;
       align-items: center;
-      padding: 6px 10px;
+      gap: 10px;
+      padding: 7px 10px;
       border: 1px solid var(--line);
       border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
       color: var(--teal);
-      background: #fff;
       font-size: 13px;
-      font-weight: 720;
+      font-weight: 800;
     }
 
     h1 {
-      margin: 22px 0 18px;
       max-width: 780px;
-      font-size: clamp(42px, 7vw, 82px);
+      margin: 22px 0 18px;
+      font-size: clamp(42px, 6.8vw, 86px);
       line-height: 0.98;
       letter-spacing: 0;
     }
 
     .lede {
-      max-width: 640px;
+      max-width: 670px;
+      margin: 0;
       color: var(--muted);
-      font-size: clamp(17px, 2vw, 20px);
+      font-size: clamp(17px, 1.55vw, 21px);
+    }
+
+    .hero-points {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 28px 0 0;
+      max-width: 660px;
+    }
+
+    .hero-point {
+      min-height: 82px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.74);
+      box-shadow: 0 6px 18px rgba(21, 25, 30, 0.05);
+    }
+
+    .hero-point b {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 15px;
+    }
+
+    .hero-point span {
+      color: var(--muted);
+      font-size: 13px;
     }
 
     .actions {
       display: flex;
-      flex-wrap: wrap;
       gap: 12px;
-      margin-top: 28px;
+      flex-wrap: wrap;
+      margin-top: 30px;
     }
 
     .button {
-      min-height: 44px;
+      min-height: 46px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 9px;
-      padding: 10px 15px;
-      border-radius: 8px;
+      padding: 10px 16px;
       border: 1px solid var(--line);
+      border-radius: 8px;
       background: #fff;
       color: var(--ink);
       text-decoration: none;
-      font-weight: 720;
-      box-shadow: 0 2px 0 rgba(24, 33, 31, 0.05);
+      font-weight: 800;
+      box-shadow: 0 2px 0 rgba(21, 25, 30, 0.06);
     }
 
     .button.primary {
@@ -152,114 +201,255 @@
       color: #fff;
     }
 
-    .visual {
+    .stage {
       position: relative;
-      min-height: 530px;
+      min-height: 600px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background:
-        linear-gradient(90deg, rgba(220, 226, 220, 0.55) 1px, transparent 1px),
-        linear-gradient(rgba(220, 226, 220, 0.55) 1px, transparent 1px),
-        #fbfcfa;
-      background-size: 42px 42px;
+        linear-gradient(90deg, rgba(217, 225, 234, 0.70) 1px, transparent 1px),
+        linear-gradient(rgba(217, 225, 234, 0.70) 1px, transparent 1px),
+        #ffffff;
+      background-size: 38px 38px;
       box-shadow: var(--shadow);
       overflow: hidden;
+      isolation: isolate;
     }
 
-    .flow-line {
+    .stage::before {
+      content: "";
       position: absolute;
-      left: 12%;
-      right: 12%;
-      top: 50%;
-      height: 2px;
-      background: var(--line);
-      transform: translateY(-50%);
+      inset: 28px;
+      border: 1px dashed rgba(21, 25, 30, 0.12);
+      border-radius: 8px;
+      pointer-events: none;
     }
 
-    .pulse {
+    .stage-corner {
       position: absolute;
-      top: calc(50% - 5px);
-      left: 12%;
-      width: 10px;
-      height: 10px;
+      right: 26px;
+      top: 22px;
+      display: flex;
+      gap: 7px;
+      color: rgba(21, 25, 30, 0.42);
+      font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .stage-corner::before {
+      content: "";
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: var(--teal);
-      box-shadow: 0 0 0 8px rgba(15, 118, 110, 0.12);
+      background: var(--green);
+      box-shadow: 0 0 0 6px rgba(36, 116, 71, 0.12);
     }
 
-    .node {
+    .flow-map {
       position: absolute;
-      width: min(28vw, 180px);
-      min-width: 132px;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .flow-path {
+      fill: none;
+      stroke: rgba(33, 86, 200, 0.42);
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      stroke-dasharray: 10 14;
+    }
+
+    .flow-path.alt {
+      stroke: rgba(8, 117, 111, 0.35);
+      stroke-width: 1.7;
+    }
+
+    .flow-node {
+      fill: #fff;
+      stroke: rgba(21, 25, 30, 0.28);
+      stroke-width: 1.2;
+    }
+
+    .mail-stack {
+      position: absolute;
+      left: 38px;
+      top: 62px;
+      width: 190px;
+      height: 190px;
+      z-index: 2;
+    }
+
+    .mail-card {
+      position: absolute;
+      inset: 0;
       padding: 16px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.94);
-      box-shadow: 0 16px 35px rgba(24, 33, 31, 0.11);
+      background: #fff;
+      box-shadow: var(--soft);
+      transform-origin: 50% 90%;
     }
 
-    .node small {
+    .mail-card:nth-child(1) { transform: rotate(-8deg) translate(-10px, 16px); border-top: 5px solid var(--blue); }
+    .mail-card:nth-child(2) { transform: rotate(4deg) translate(8px, 6px); border-top: 5px solid var(--amber); }
+    .mail-card:nth-child(3) { transform: rotate(-1deg); border-top: 5px solid var(--teal); }
+
+    .mail-card small,
+    .system-card small {
       color: var(--muted);
-      font-weight: 700;
-      text-transform: uppercase;
       font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
     }
 
-    .node strong {
+    .mail-card strong,
+    .system-card strong {
       display: block;
-      margin-top: 6px;
-      font-size: 18px;
+      margin-top: 8px;
+      font-size: 17px;
+      line-height: 1.25;
     }
 
-    .node p {
+    .mail-card p,
+    .system-card p {
       margin: 8px 0 0;
       color: var(--muted);
       font-size: 13px;
     }
 
-    .mail { left: 8%; top: 17%; border-top: 4px solid var(--blue); }
-    .extract { left: 38%; top: 42%; border-top: 4px solid var(--teal); }
-    .calendar { right: 8%; top: 20%; border-top: 4px solid var(--green); }
-    .review { right: 14%; bottom: 12%; border-top: 4px solid var(--amber); }
-
-    .status-strip {
+    .system-card {
       position: absolute;
-      left: 22px;
-      right: 22px;
-      bottom: 22px;
+      width: 215px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.93);
+      box-shadow: var(--soft);
+      z-index: 2;
+    }
+
+    .ai-card { left: 50%; top: 42%; transform: translate(-50%, -50%); border-top: 5px solid var(--violet); }
+    .calendar-card { right: 42px; top: 70px; border-top: 5px solid var(--green); }
+    .guard-card { right: 70px; bottom: 116px; border-top: 5px solid var(--coral); }
+
+    .packet {
+      position: absolute;
+      left: 144px;
+      top: 190px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 10px rgba(33, 86, 200, 0.12);
+      z-index: 3;
+    }
+
+    .packet.secondary {
+      background: var(--teal);
+      box-shadow: 0 0 0 9px rgba(8, 117, 111, 0.13);
+    }
+
+    .packet.tertiary {
+      background: var(--coral);
+      box-shadow: 0 0 0 9px rgba(191, 63, 47, 0.12);
+    }
+
+    .metric-strip {
+      position: absolute;
+      left: 32px;
+      right: 32px;
+      top: 318px;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-height: 66px;
+      padding: 11px 12px;
+      border: 1px solid rgba(217, 225, 234, 0.88);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.76);
+      backdrop-filter: blur(10px);
+    }
+
+    .metric b {
+      display: block;
+      font-size: 13px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .decision-board {
+      position: absolute;
+      left: 34px;
+      right: 34px;
+      bottom: 30px;
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
+      gap: 10px;
     }
 
-    .status {
-      min-width: 0;
-      padding: 10px;
+    .decision {
+      min-height: 76px;
+      padding: 12px;
+      border: 1px solid var(--line);
       border-radius: 8px;
       background: #fff;
-      border: 1px solid var(--line);
+      position: relative;
+      z-index: 2;
     }
 
-    .status b {
+    .decision b {
       display: block;
       font-size: 18px;
     }
 
-    .status span {
+    .decision span {
       color: var(--muted);
       font-size: 12px;
-      white-space: nowrap;
     }
 
     .section {
-      padding: 58px clamp(18px, 5vw, 72px);
+      padding: 70px clamp(18px, 4vw, 72px);
       border-top: 1px solid var(--line);
     }
 
-    .section h2 {
-      margin: 0 0 22px;
-      font-size: clamp(28px, 4vw, 44px);
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.72fr) minmax(260px, 0.28fr);
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    .section-label {
+      margin: 0 0 10px;
+      color: var(--teal);
+      font-size: 13px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(30px, 4.4vw, 54px);
+      line-height: 1.05;
       letter-spacing: 0;
+    }
+
+    .section-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
     }
 
     .grid {
@@ -269,19 +459,21 @@
     }
 
     .card {
-      min-height: 170px;
+      min-height: 190px;
       padding: 20px;
-      background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 8px;
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 8px 28px rgba(21, 25, 30, 0.06);
     }
 
     .card h3 {
-      margin: 0 0 8px;
-      font-size: 18px;
+      margin: 0 0 10px;
+      font-size: 19px;
     }
 
-    .card p, .card li {
+    .card p,
+    .card li {
       color: var(--muted);
       font-size: 15px;
     }
@@ -291,41 +483,210 @@
       padding-left: 18px;
     }
 
-    .terminal {
-      overflow: auto;
-      padding: 20px;
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 0.94fr) minmax(320px, 1.06fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .explain {
+      padding: 24px;
+      border: 1px solid var(--line);
       border-radius: 8px;
-      background: #18211f;
-      color: #ecf4ef;
-      font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #fff;
+      box-shadow: var(--soft);
+    }
+
+    .explain h3 {
+      margin: 0 0 12px;
+      font-size: 23px;
+    }
+
+    .explain p {
+      color: var(--muted);
+    }
+
+    .timeline {
+      position: relative;
+      padding-left: 28px;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      bottom: 8px;
+      width: 2px;
+      background: var(--line);
+    }
+
+    .step {
+      position: relative;
+      margin: 0 0 18px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .step::before {
+      content: "";
+      position: absolute;
+      left: -26px;
+      top: 21px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 6px rgba(33, 86, 200, 0.13);
+    }
+
+    .step h3 {
+      margin: 0 0 6px;
+      font-size: 17px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .code-panel {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 420px;
+      overflow: hidden;
+      border: 1px solid #26302d;
+      border-radius: 8px;
+      background: #111917;
       box-shadow: var(--shadow);
     }
 
-    .terminal span {
-      color: #8dd7c8;
+    .code-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
     }
 
-    footer {
-      padding: 34px clamp(18px, 5vw, 72px);
+    .code-tab {
+      padding: 6px 9px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #cfe1d9;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    pre {
+      margin: 0;
+      padding: 18px;
+      overflow: auto;
+      color: #e9f4ef;
+      font: 13px/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .comment { color: #7eb2a8; }
+    .keyword { color: #8db7ff; }
+    .string { color: #ffd27e; }
+    .number { color: #f49f8f; }
+
+    .states {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .state {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      min-height: 170px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .state::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 5px;
+      background: var(--state-color, var(--blue));
+    }
+
+    .state h3 {
+      margin: 8px 0 8px;
+    }
+
+    .state p {
       color: var(--muted);
+      font-size: 14px;
+    }
+
+    .deploy {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+      gap: 18px;
+    }
+
+    .footer {
+      padding: 36px clamp(18px, 4vw, 72px);
       border-top: 1px solid var(--line);
+      color: var(--muted);
     }
 
-    @media (max-width: 920px) {
-      .hero {
+    @media (max-width: 980px) {
+      .hero,
+      .split,
+      .deploy,
+      .section-head {
         grid-template-columns: 1fr;
       }
 
-      .visual {
-        min-height: 520px;
+      .stage {
+        min-height: 680px;
       }
 
-      .grid {
-        grid-template-columns: 1fr;
+      .mail-stack {
+        left: 30px;
+        top: 38px;
+      }
+
+      .ai-card {
+        left: 36px;
+        top: 290px;
+        transform: none;
+      }
+
+      .calendar-card {
+        right: 30px;
+        top: 260px;
+      }
+
+      .guard-card {
+        left: 30px;
+        right: auto;
+        bottom: 138px;
+      }
+
+      .flow-map,
+      .packet {
+        display: none;
+      }
+
+      .grid,
+      .states {
+        grid-template-columns: 1fr 1fr;
       }
     }
 
-    @media (max-width: 620px) {
+    @media (max-width: 680px) {
       .nav {
         align-items: flex-start;
         flex-direction: column;
@@ -335,195 +696,393 @@
         justify-content: flex-start;
       }
 
-      .visual {
-        min-height: 620px;
+      .hero-points,
+      .grid,
+      .states,
+      .decision-board {
+        grid-template-columns: 1fr;
       }
 
-      .node {
-        width: calc(100% - 44px);
+      .stage {
+        min-height: 970px;
+      }
+
+      .mail-stack,
+      .system-card {
         left: 22px !important;
-        right: auto !important;
+        right: 22px !important;
+        width: auto;
       }
 
-      .mail { top: 26px; }
-      .extract { top: 166px; }
-      .calendar { top: 306px; }
-      .review { top: 446px; bottom: auto; }
-      .flow-line, .pulse {
-        display: none;
-      }
+      .mail-stack { top: 28px; }
+      .ai-card { top: 270px; }
+      .calendar-card { top: 410px; }
+      .guard-card { top: 550px; bottom: auto; }
 
-      .status-strip {
-        grid-template-columns: repeat(2, 1fr);
+      .metric-strip {
+        top: 700px;
+        grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <nav class="nav">
-      <div class="brand"><span class="mark">OA</span><span>Outlook Event Automation</span></div>
-      <div class="links">
-        <a href="#pipeline">Pipeline</a>
-        <a href="#safety">Safety</a>
-        <a href="#deploy">Deploy</a>
-        <a href="https://github.com/whitesweater/outlook-event-automation">GitHub</a>
+  <nav class="nav">
+    <div class="brand"><span class="mark">OA</span><span>邮件活动自动入日程</span></div>
+    <div class="links">
+      <a href="#user">给用户</a>
+      <a href="#developer">给开发者</a>
+      <a href="#states">状态规则</a>
+      <a href="#deploy">部署</a>
+      <a href="https://github.com/whitesweater/outlook-event-automation">GitHub</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div>
+        <span class="eyebrow">Outlook / Gmail -> AI -> Calendar</span>
+        <h1>把活动邮件变成可信的日历事件</h1>
+        <p class="lede">
+          这是一个常驻服务器上的邮件处理代理：它读取你的活动邮件，用结构化 AI 抽取时间、地点和标题，
+          只把足够确定的事件写入日历，并把原始邮件内容附在日历详情里，方便之后追溯。
+        </p>
+        <div class="hero-points">
+          <div class="hero-point"><b>给用户</b><span>你只需要把活动邮件送进目标邮箱，服务会自动识别、过滤、写入日历。</span></div>
+          <div class="hero-point"><b>给开发者</b><span>核心是 Microsoft Graph/Gmail API + Responses API + SQLite 去重 + systemd 常驻。</span></div>
+          <div class="hero-point"><b>保守写入</b><span>多活动汇总、取消通知、时间冲突、信息不完整，不会自动写进日历。</span></div>
+          <div class="hero-point"><b>可追溯</b><span>日历事件正文包含 AI 摘要、来源邮件元数据和原始邮件正文。</span></div>
+        </div>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/whitesweater/outlook-event-automation">查看仓库</a>
+          <a class="button" href="#developer">看技术实现</a>
+        </div>
       </div>
-    </nav>
 
-    <main>
-      <section class="hero">
-        <div class="copy">
-          <span class="eyebrow">Always-on mail to calendar agent</span>
-          <h1>Outlook Event Automation</h1>
-          <p class="lede">
-            A server-side agent that reads event-heavy inboxes, extracts structured calendar data,
-            writes eligible events, and keeps a clear audit trail for ignored and ambiguous mail.
-          </p>
-          <div class="actions">
-            <a class="button primary" href="https://github.com/whitesweater/outlook-event-automation">View Source</a>
-            <a class="button" href="#deploy">Deploy It</a>
+      <div class="stage" aria-label="邮件处理流程动画">
+        <div class="stage-corner">live agent</div>
+        <svg class="flow-map" viewBox="0 0 620 560" aria-hidden="true">
+          <path class="flow-path" d="M150 176 C250 76 324 162 336 238 C350 322 474 264 508 128"></path>
+          <path class="flow-path alt" d="M151 176 C252 250 342 306 474 398"></path>
+          <path class="flow-path alt" d="M336 238 C286 352 188 420 112 500"></path>
+          <circle class="flow-node" cx="150" cy="176" r="8"></circle>
+          <circle class="flow-node" cx="336" cy="238" r="8"></circle>
+          <circle class="flow-node" cx="508" cy="128" r="8"></circle>
+          <circle class="flow-node" cx="474" cy="398" r="8"></circle>
+        </svg>
+        <div class="mail-stack">
+          <div class="mail-card"><small>Mail</small><strong>安全通知</strong><p>不是日程，直接忽略。</p></div>
+          <div class="mail-card"><small>Mail</small><strong>Daily Event Alert</strong><p>汇总邮件，按规则跳过。</p></div>
+          <div class="mail-card"><small>Mail</small><strong>活动邀请</strong><p>包含时间、地点和正文。</p></div>
+        </div>
+        <div class="packet packet-one"></div>
+        <div class="packet packet-two secondary"></div>
+        <div class="packet packet-three tertiary"></div>
+        <article class="system-card ai-card">
+          <small>Batch AI</small>
+          <strong>结构化抽取</strong>
+          <p>一次处理 20 封邮件，返回 JSON schema 约束的事件判断。</p>
+        </article>
+        <article class="system-card calendar-card">
+          <small>Calendar</small>
+          <strong>写入日历</strong>
+          <p>只有 eligible 的事件会创建 Outlook/Google Calendar 项。</p>
+        </article>
+        <article class="system-card guard-card">
+          <small>Guardrail</small>
+          <strong>复核保护</strong>
+          <p>取消、撤回、多事件、缺时间，保留日志但不自动写。</p>
+        </article>
+        <div class="metric-strip">
+          <div class="metric"><b>batch_size = 20</b><span>批量请求，失败自动拆批</span></div>
+          <div class="metric"><b>poll = 30s</b><span>服务器轮询新邮件</span></div>
+          <div class="metric"><b>body attached</b><span>事件正文保留原邮件</span></div>
+        </div>
+        <div class="decision-board">
+          <div class="decision"><b>ignored</b><span>明确不是日程</span></div>
+          <div class="decision"><b>needs_review</b><span>像活动但不够稳</span></div>
+          <div class="decision"><b>created</b><span>已写入日历</span></div>
+          <div class="decision"><b>SQLite</b><span>去重与审计</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="user">
+      <div class="section-head">
+        <div>
+          <p class="section-label">给用户看的</p>
+          <h2>它到底帮你做什么</h2>
+        </div>
+        <p class="section-note">这个部分关心使用结果：哪些邮件会进日历、哪些不会、日历项里有什么。</p>
+      </div>
+      <div class="grid">
+        <article class="card reveal">
+          <h3>自动处理活动邮件</h3>
+          <p>讲座、工作坊、报名活动、培训、维护通知等邮件会被识别，提取标题、开始时间、结束时间、地点和说明。</p>
+        </article>
+        <article class="card reveal">
+          <h3>不把垃圾通知塞进日历</h3>
+          <p>账号登录通知、天气提醒、普通系统通知会被标记为 <code>ignored</code>，不会进入复核队列，也不会写入日历。</p>
+        </article>
+        <article class="card reveal">
+          <h3>遇到不确定就停住</h3>
+          <p>一封邮件里有多个活动、时间冲突、缺少结束时间、取消通知或撤回通知，会进入 <code>needs_review</code>，不会自动创建。</p>
+        </article>
+        <article class="card reveal">
+          <h3>日历项能追溯来源</h3>
+          <p>Outlook Calendar 事件正文会附上活动摘要、原始邮件主题、发件人、收信时间、原始链接和邮件正文。</p>
+        </article>
+        <article class="card reveal">
+          <h3>默认中文化</h3>
+          <p>标题、摘要、地点、复核原因尽量用中文写；英文项目名、机构名、房间名会尽量保留。</p>
+        </article>
+        <article class="card reveal">
+          <h3>常驻运行</h3>
+          <p>服务部署在服务器上，以 systemd 常驻；新邮件进入后按轮询间隔处理，不依赖本地电脑一直开着。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="developer">
+      <div class="section-head">
+        <div>
+          <p class="section-label">给开发者看的</p>
+          <h2>系统是怎么工作的</h2>
+        </div>
+        <p class="section-note">这个部分关心实现：API、模型、状态机、去重、批处理和部署边界。</p>
+      </div>
+      <div class="split">
+        <div class="timeline">
+          <article class="step reveal">
+            <h3>1. 读取消息</h3>
+            <p>Outlook 通过 Microsoft Graph 读取 `/me/messages` 或指定 mailbox；Gmail 通过 Gmail API 读取邮件正文。</p>
+          </article>
+          <article class="step reveal">
+            <h3>2. 前置规则过滤</h3>
+            <p><code>Daily Event Alert</code> 汇总邮件直接忽略；取消和撤回类邮件会被强制复核，不允许自动创建。</p>
+          </article>
+          <article class="step reveal">
+            <h3>3. 批量 AI 抽取</h3>
+            <p>默认每批 20 封邮件，请求 OpenAI-compatible Responses API，使用 JSON schema 要求每封邮件返回一个事件判断。</p>
+          </article>
+          <article class="step reveal">
+            <h3>4. 自动拆批重试</h3>
+            <p>如果代理 500、上游 reset、或模型返回数量不一致，批次会自动从 20 拆成 10、5，单封失败不写 processed，留给下一轮重试。</p>
+          </article>
+          <article class="step reveal">
+            <h3>5. 写入与记录</h3>
+            <p>eligible 事件写入 Outlook/Google Calendar；SQLite 记录 source message id、dedupe key、状态和远端 event id。</p>
+          </article>
+        </div>
+
+        <div class="code-panel reveal">
+          <div class="code-tabs">
+            <span class="code-tab">event_agent.py</span>
+            <span class="code-tab">Responses API</span>
+            <span class="code-tab">systemd</span>
           </div>
-        </div>
+          <pre><code><span class="comment"># 常驻循环：读邮件 -> 抽取 -> 判断 -> 写日历</span>
+<span class="keyword">python3</span> event_agent.py \
+  --config config.local.json serve --write
 
-        <div class="visual" aria-label="Animated pipeline diagram">
-          <div class="flow-line"></div>
-          <div class="pulse"></div>
-          <article class="node mail">
-            <small>Input</small>
-            <strong>Outlook Mail</strong>
-            <p>Graph reads recent messages with delegated or app-only permissions.</p>
-          </article>
-          <article class="node extract">
-            <small>AI</small>
-            <strong>Batch Extraction</strong>
-            <p>Responses API returns one structured event decision per message.</p>
-          </article>
-          <article class="node calendar">
-            <small>Output</small>
-            <strong>Calendar Event</strong>
-            <p>Eligible events are written with the source email attached.</p>
-          </article>
-          <article class="node review">
-            <small>Guardrail</small>
-            <strong>Review State</strong>
-            <p>Ambiguous, cancelled, and multi-event messages stay out of the calendar.</p>
-          </article>
-          <div class="status-strip">
-            <div class="status"><b>20</b><span>batch size</span></div>
-            <div class="status"><b>60s</b><span>polling</span></div>
-            <div class="status"><b>HTML</b><span>event body</span></div>
-            <div class="status"><b>SQLite</b><span>dedupe</span></div>
+<span class="comment"># 批量抽取默认配置</span>
+extraction.batch_size = <span class="number">20</span>
+extraction.openai_model = <span class="string">"gpt-5.5"</span>
+calendar.include_source_email_body = <span class="keyword">true</span>
+
+<span class="comment"># 输出状态</span>
+ignored       <span class="comment"># 明确不是日程</span>
+needs_review  <span class="comment"># 像活动但不够确定</span>
+created       <span class="comment"># 已写入日历</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="states">
+      <div class="section-head">
+        <div>
+          <p class="section-label">状态规则</p>
+          <h2>为什么不是什么都自动写</h2>
+        </div>
+        <p class="section-note">日历是高信任界面，宁愿少写，也不要把错误事件塞进去。</p>
+      </div>
+      <div class="states">
+        <article class="state reveal" style="--state-color: var(--green)">
+          <h3>created</h3>
+          <p>时间、地点、标题、置信度都足够，且不是重复事件。服务模式下会创建日历项。</p>
+        </article>
+        <article class="state reveal" style="--state-color: var(--blue)">
+          <h3>dry_run</h3>
+          <p>测试模式下的可写候选，只展示结果，不真的写日历。</p>
+        </article>
+        <article class="state reveal" style="--state-color: var(--amber)">
+          <h3>needs_review</h3>
+          <p>像活动，但缺结束时间、多活动混杂、信息冲突、取消/撤回，暂时只保留日志。</p>
+        </article>
+        <article class="state reveal" style="--state-color: var(--coral)">
+          <h3>ignored</h3>
+          <p>明确不是日程，或者命中特定噪声规则，例如 Daily Event Alert 汇总邮件。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="deploy">
+      <div class="section-head">
+        <div>
+          <p class="section-label">部署方式</p>
+          <h2>从仓库到服务器</h2>
+        </div>
+        <p class="section-note">项目没有强依赖框架，核心脚本是标准库 Python，适合放在小服务器上长期运行。</p>
+      </div>
+      <div class="deploy">
+        <div class="explain reveal">
+          <h3>运行前需要什么</h3>
+          <p>你需要一个 Microsoft 或 Google OAuth 应用、一个 OpenAI-compatible Responses API key，以及一份本地配置文件。</p>
+          <p>生产环境不要提交 <code>.env</code>、<code>config.local.json</code>、SQLite 数据库或扫描日志。</p>
+        </div>
+        <div class="code-panel reveal">
+          <div class="code-tabs">
+            <span class="code-tab">Quickstart</span>
           </div>
+          <pre><code><span class="keyword">cd</span> outlook_event_automation
+<span class="keyword">cp</span> config.example.json config.local.json
+<span class="keyword">cp</span> .env.example .env
+
+<span class="keyword">python3</span> event_agent.py --config config.local.json auth-microsoft
+<span class="keyword">python3</span> event_agent.py --config config.local.json run \
+  --source outlook --sink none --limit <span class="number">20</span> --force
+<span class="keyword">python3</span> event_agent.py --config config.local.json serve --write</code></pre>
         </div>
-      </section>
+      </div>
+    </section>
+  </main>
 
-      <section class="section" id="pipeline">
-        <h2>Pipeline</h2>
-        <div class="grid">
-          <article class="card">
-            <h3>Read</h3>
-            <p>Outlook Mail and Gmail sources are supported. The active production path uses Microsoft Graph.</p>
-          </article>
-          <article class="card">
-            <h3>Extract</h3>
-            <p>Messages are processed in batches with schema-constrained Responses API output and split-retry fallback.</p>
-          </article>
-          <article class="card">
-            <h3>Write</h3>
-            <p>Outlook Calendar or Google Calendar can receive eligible events, with dedupe keys preventing repeat writes.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section" id="safety">
-        <h2>Safety</h2>
-        <div class="grid">
-          <article class="card">
-            <h3>Conservative States</h3>
-            <ul>
-              <li><code>ignored</code>: not a calendar event.</li>
-              <li><code>needs_review</code>: event-like but ambiguous.</li>
-              <li><code>created</code>: written to calendar.</li>
-            </ul>
-          </article>
-          <article class="card">
-            <h3>Source Context</h3>
-            <p>Outlook events are created with an HTML body containing the AI summary, source metadata, and original email text.</p>
-          </article>
-          <article class="card">
-            <h3>Noise Filters</h3>
-            <p>Daily Event Alert summaries, cancellation notices, and recall messages are kept out of automatic writes.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section" id="deploy">
-        <h2>Deploy</h2>
-        <pre class="terminal"><code><span>$</span> cp config.example.json config.local.json
-<span>$</span> cp .env.example .env
-<span>$</span> python3 event_agent.py --config config.local.json auth-microsoft
-<span>$</span> python3 event_agent.py --config config.local.json run --source outlook --sink none --limit 20 --force
-<span>$</span> python3 event_agent.py --config config.local.json serve --write</code></pre>
-      </section>
-    </main>
-
-    <footer>
-      Built for resilient inbox automation: clear states, cautious writes, and calendar entries that carry their evidence.
-    </footer>
-  </div>
+  <footer class="footer">
+    <p>Outlook Event Automation：一个把活动邮件变成可信日历的自动化代理。仓库托管于 GitHub，主页使用 GSAP timeline 与 ScrollTrigger 构建。</p>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
   <script>
+    gsap.registerPlugin(ScrollTrigger);
+
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    gsap.defaults({ duration: reduceMotion ? 0 : 0.8, ease: "power3.out" });
 
-    gsap.defaults({
-      duration: reduceMotion ? 0 : 0.75,
-      ease: "power3.out"
-    });
+    if (reduceMotion) {
+      gsap.set(".nav, .eyebrow, h1, .lede, .hero-point, .actions, .stage, .mail-card, .system-card, .decision, .metric, .reveal", { autoAlpha: 1, y: 0, x: 0, scale: 1 });
+    } else {
+      const intro = gsap.timeline({ defaults: { ease: "power3.out" } });
+      intro
+        .from(".nav", { y: -18, autoAlpha: 0, duration: 0.5 })
+        .from(".eyebrow", { y: 18, autoAlpha: 0 }, "<0.1")
+        .from("h1", { y: 32, autoAlpha: 0, duration: 0.9 }, "<0.08")
+        .from(".lede", { y: 20, autoAlpha: 0 }, "<0.18")
+        .from(".hero-point", { y: 18, autoAlpha: 0, stagger: 0.06 }, "<0.12")
+        .from(".actions .button", { y: 14, autoAlpha: 0, stagger: 0.08 }, "<0.12")
+        .from(".stage", { y: 28, autoAlpha: 0, duration: 0.8 }, "<0.05")
+        .from(".flow-path", { strokeDashoffset: 90, autoAlpha: 0, stagger: 0.08 }, "<0.08")
+        .from(".mail-card", { y: 24, rotation: -14, autoAlpha: 0, stagger: 0.08 }, "<0.18")
+        .from(".system-card", { scale: 0.9, autoAlpha: 0, stagger: 0.1 }, "<0.2")
+        .from(".metric", { y: 14, autoAlpha: 0, stagger: 0.06 }, "<0.05")
+        .from(".decision", { y: 16, autoAlpha: 0, stagger: 0.05 }, "<0.05");
 
-    if (!reduceMotion) {
-      gsap.from(".nav", { y: -18, autoAlpha: 0 });
-      gsap.from(".eyebrow, h1, .lede, .actions", {
-        y: 22,
-        autoAlpha: 0,
-        stagger: 0.08,
-        delay: 0.1
-      });
-      gsap.from(".visual", { y: 24, autoAlpha: 0, delay: 0.18 });
-      gsap.from(".node", {
-        y: 18,
-        autoAlpha: 0,
-        stagger: { each: 0.12, from: "start" },
-        delay: 0.35
-      });
-      gsap.to(".pulse", {
-        xPercent: 760,
-        duration: 3.2,
+      gsap.to(".flow-path", {
+        strokeDashoffset: -96,
+        duration: 3.8,
         ease: "none",
         repeat: -1
       });
-      gsap.to(".status b", {
-        y: -2,
-        repeat: -1,
+
+      const stream = (selector, delay, scale) => {
+        const tl = gsap.timeline({ repeat: -1, delay });
+        tl.set(selector, { x: 0, y: 0, scale, autoAlpha: 0 })
+          .to(selector, { autoAlpha: 1, duration: 0.12 })
+          .to(selector, { x: 185, y: 62, duration: 0.85, ease: "power1.inOut" })
+          .to(selector, { x: 330, y: -58, duration: 0.85, ease: "power1.inOut" })
+          .to(selector, { x: 334, y: 206, duration: 0.82, ease: "power1.inOut" })
+          .to(selector, { x: -38, y: 312, autoAlpha: 0, duration: 0.72, ease: "power1.in" })
+          .to(selector, { duration: 0.4 });
+      };
+
+      stream(".packet-one", 0, 1);
+      stream(".packet-two", 0.85, 0.82);
+      stream(".packet-three", 1.7, 0.68);
+
+      gsap.to(".mail-card", {
+        y: (i) => i % 2 ? -8 : 8,
+        rotation: (i) => i % 2 ? 7 : -7,
+        duration: 2.6,
+        ease: "sine.inOut",
         yoyo: true,
-        stagger: 0.16,
-        duration: 1.2,
-        ease: "sine.inOut"
+        repeat: -1,
+        stagger: 0.12
+      });
+
+      gsap.to(".ai-card", {
+        y: -10,
+        duration: 2,
+        ease: "sine.inOut",
+        yoyo: true,
+        repeat: -1
+      });
+
+      gsap.to(".calendar-card, .guard-card", {
+        y: (i) => i ? 9 : -9,
+        duration: 2.4,
+        ease: "sine.inOut",
+        yoyo: true,
+        repeat: -1,
+        stagger: 0.15
+      });
+
+      ScrollTrigger.batch(".reveal", {
+        start: "top 82%",
+        once: true,
+        onEnter: (batch) => gsap.fromTo(batch,
+          { y: 34, autoAlpha: 0 },
+          { y: 0, autoAlpha: 1, stagger: 0.08, duration: 0.75, overwrite: true }
+        )
       });
 
       const mm = gsap.matchMedia();
-      mm.add("(min-width: 921px)", () => {
-        gsap.to(".extract", {
-          y: -8,
-          repeat: -1,
-          yoyo: true,
-          duration: 2.1,
-          ease: "sine.inOut"
+      mm.add("(min-width: 981px)", () => {
+        gsap.timeline({
+          scrollTrigger: {
+            trigger: ".hero",
+            start: "top top",
+            end: "bottom top",
+            scrub: 0.7
+          }
+        })
+          .to(".stage", { y: -28, rotateX: 0, scale: 0.985 }, 0)
+          .to(".mail-stack", { y: 26 }, 0)
+          .to(".calendar-card", { y: -24 }, 0)
+          .to(".guard-card", { y: 18 }, 0)
+          .to(".decision-board", { y: -16 }, 0);
+
+        const devTl = gsap.timeline({
+          scrollTrigger: {
+            trigger: "#developer",
+            start: "top 72%",
+            end: "bottom 40%",
+            scrub: 0.8
+          }
+        });
+        devTl
+          .to(".code-panel", { y: -18, boxShadow: "0 32px 90px rgba(21,25,30,0.20)" }, 0)
+          .to(".step", { borderColor: "rgba(33,86,200,0.38)", stagger: 0.04 }, 0);
+
+        gsap.to(".state", {
+          y: (i) => i % 2 ? -12 : 12,
+          scrollTrigger: {
+            trigger: "#states",
+            start: "top bottom",
+            end: "bottom top",
+            scrub: 1
+          }
         });
       });
-    } else {
-      gsap.set(".nav, .eyebrow, h1, .lede, .actions, .visual, .node", { autoAlpha: 1 });
     }
   </script>
 </body>
