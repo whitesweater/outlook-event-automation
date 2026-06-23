@@ -139,6 +139,8 @@ curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
   http://127.0.0.1:8791/digest?hours=24
 curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
   'http://127.0.0.1:8791/agenda?date=today&limit=50'
+curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
+  'http://127.0.0.1:8791/agenda-range?date=today&days=7&limit=100'
 ```
 
 日程查询走 Microsoft Graph Calendar，需要 Microsoft delegated scopes 至少包含

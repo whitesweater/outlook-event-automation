@@ -1163,6 +1163,7 @@ def parse_datetime(value: str, default_timezone: str = "UTC") -> datetime:
     candidate = value.strip()
     if candidate.endswith("Z"):
         candidate = candidate[:-1] + "+00:00"
+    candidate = re.sub(r"(\.\d{6})\d+(?=([+-]\d{2}:?\d{2}|$))", r"\1", candidate)
     try:
         parsed = datetime.fromisoformat(candidate)
     except ValueError as exc:
@@ -1472,6 +1473,81 @@ def build_outlook_agenda(config: dict[str, Any], date_value: str | None, limit: 
             "date": date_label,
             "timezone": timezone_name,
             "events": items,
+            "total_events": len(items),
+        },
+    }
+
+
+def weekday_zh(value: datetime) -> str:
+    names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    return names[value.weekday()]
+
+
+def build_outlook_agenda_range(
+    config: dict[str, Any],
+    date_value: str | None,
+    days: int,
+    limit: int,
+) -> dict[str, Any]:
+    timezone_name = config.get("extraction", {}).get("default_timezone", "Asia/Shanghai")
+    start = parse_agenda_date(date_value, timezone_name)
+    days = max(1, min(days, 31))
+    end = start + timedelta(days=days)
+    items = [
+        normalize_agenda_item(item, timezone_name)
+        for item in fetch_outlook_calendar_view(config, start, end, limit=limit)
+    ]
+    items.sort(key=lambda item: (item.get("start_time") or item.get("time") or "", item.get("title") or ""))
+
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        raw_start = item.get("start_time", "")
+        if raw_start:
+            try:
+                item_date = parse_datetime(raw_start).strftime("%Y-%m-%d")
+            except AgentError:
+                item_date = "日期待确认"
+        else:
+            item_date = "日期待确认"
+        by_date.setdefault(item_date, []).append(item)
+
+    start_label = start.strftime("%Y-%m-%d")
+    end_inclusive = (end - timedelta(days=1)).strftime("%Y-%m-%d")
+    lines = [
+        f"## 未来 {days} 天日程安排",
+        "",
+        f"- 日期范围：{start_label} 至 {end_inclusive}",
+        f"- 时区：{timezone_name}",
+        f"- 日程数：{len(items)}",
+    ]
+    if not items:
+        lines.extend(["", "这段时间暂时没有日程安排。"])
+    else:
+        for offset in range(days):
+            current = start + timedelta(days=offset)
+            current_label = current.strftime("%Y-%m-%d")
+            current_items = by_date.get(current_label, [])
+            if not current_items:
+                continue
+            lines.extend(["", f"### {current_label} {weekday_zh(current)}"])
+            for item in current_items:
+                location = item.get("location") or "地点未填写"
+                lines.append(f"- `{item['time']}` {item['title']}｜{location}")
+        if "日期待确认" in by_date:
+            lines.extend(["", "### 日期待确认"])
+            for item in by_date["日期待确认"]:
+                location = item.get("location") or "地点未填写"
+                lines.append(f"- `{item['time']}` {item['title']}｜{location}")
+    return {
+        "title": f"{start_label} 至 {end_inclusive} 日程安排",
+        "markdown": "\n".join(lines),
+        "payload": {
+            "start_date": start_label,
+            "end_date": end_inclusive,
+            "days": days,
+            "timezone": timezone_name,
+            "events": items,
+            "events_by_date": by_date,
             "total_events": len(items),
         },
     }
@@ -2077,6 +2153,7 @@ def api_routes() -> dict[str, Any]:
             "GET /": "List routes",
             "GET /health": "Service health report JSON",
             "GET /agenda?date=today&limit=50": "Outlook Calendar agenda for a day",
+            "GET /agenda-range?date=today&days=7&limit=100": "Outlook Calendar agenda for a date range",
             "GET /digest?hours=24&limit=20": "Activity digest JSON and markdown",
             "GET /events?status=created&hours=24&limit=20": "Processed events from SQLite",
             "GET /review?hours=24&limit=20": "needs_review events",
@@ -2103,6 +2180,10 @@ def handle_api_get(path: str, query: dict[str, str], config: dict[str, Any]) -> 
     if path == "/agenda":
         limit = query_int(query, "limit", int(api.get("agenda_limit", 50)), maximum=200)
         return 200, build_outlook_agenda(config, query.get("date") or "today", limit)
+    if path == "/agenda-range":
+        days = query_int(query, "days", int(api.get("agenda_days", 7)), maximum=31)
+        limit = query_int(query, "limit", int(api.get("agenda_range_limit", 100)), maximum=500)
+        return 200, build_outlook_agenda_range(config, query.get("date") or "today", days, limit)
     if path == "/digest":
         hours = query_int(query, "hours", default_hours, maximum=24 * 365)
         limit = query_int(query, "limit", default_limit, maximum=200)
@@ -2420,6 +2501,11 @@ def build_parser() -> argparse.ArgumentParser:
     agenda.add_argument("--date", default="today", help="today, tomorrow, 今天, 明天, or YYYY-MM-DD")
     agenda.add_argument("--limit", type=int, default=50, help="Maximum calendar events to include")
 
+    agenda_range = sub.add_parser("agenda-range", help="Print Outlook Calendar agenda for a date range")
+    agenda_range.add_argument("--date", default="today", help="today, tomorrow, 今天, 明天, or YYYY-MM-DD")
+    agenda_range.add_argument("--days", type=int, default=7, help="Number of days to include")
+    agenda_range.add_argument("--limit", type=int, default=100, help="Maximum calendar events to include")
+
     api = sub.add_parser("api-server", help="Run a lightweight HTTP API for agents")
     api.add_argument("--host", help="Bind host; defaults to api.host or 127.0.0.1")
     api.add_argument("--port", type=int, help="Bind port; defaults to api.port or 8791")
@@ -2454,6 +2540,9 @@ def main() -> int:
             health_report(args, config)
         elif args.command == "agenda":
             agenda = build_outlook_agenda(config, args.date, args.limit)
+            print(agenda["markdown"])
+        elif args.command == "agenda-range":
+            agenda = build_outlook_agenda_range(config, args.date, args.days, args.limit)
             print(agenda["markdown"])
         elif args.command == "api-server":
             api_server(args, config)
