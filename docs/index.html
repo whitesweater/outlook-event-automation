@@ -752,7 +752,7 @@
           <div class="hero-point"><b>给用户</b><span>你只需要把活动邮件送进目标邮箱，服务会自动识别、过滤、写入日历。</span></div>
           <div class="hero-point"><b>给开发者</b><span>核心是 Microsoft Graph/Gmail API + Responses API + SQLite 去重 + systemd 常驻。</span></div>
           <div class="hero-point"><b>保守写入</b><span>多活动汇总、取消通知、时间冲突、信息不完整，不会自动写进日历。</span></div>
-          <div class="hero-point"><b>自动推送</b><span>日报和故障告警可以通过自托管 Hermes 转发到微信、QQ 或飞书。</span></div>
+          <div class="hero-point"><b>Hermes 助手</b><span>自托管 Hermes 可查询日程；确认后才通过受控接口创建 Outlook 事件。</span></div>
         </div>
         <div class="actions">
           <a class="button primary" href="https://github.com/whitesweater/outlook-event-automation">查看仓库</a>
@@ -787,7 +787,7 @@
         <article class="system-card calendar-card">
           <small>Calendar</small>
           <strong>写入日历</strong>
-          <p>只有 eligible 的事件会创建 Outlook/Google Calendar 项。</p>
+          <p>eligible 事件自动创建；Hermes 请求必须先确认再写 Outlook。</p>
         </article>
         <article class="system-card guard-card">
           <small>Guardrail</small>
@@ -842,8 +842,8 @@
           <p>服务部署在服务器上，以 systemd 常驻；新邮件进入后按轮询间隔处理，不依赖本地电脑一直开着。</p>
         </article>
         <article class="card reveal">
-          <h3>每天自动汇报</h3>
-          <p>可以定时生成“过去 24 小时新增活动”和“待复核邮件”日报，通过 Hermes 推到微信、QQ 或飞书。</p>
+          <h3>Hermes 可查可办</h3>
+          <p>可以定时生成“过去 24 小时新增活动”和“待复核邮件”日报，也能让自托管 Hermes 查询近期日程；创建 Outlook 事件前会先要求用户明确确认。</p>
         </article>
       </div>
     </section>
@@ -876,11 +876,11 @@
           </article>
           <article class="step reveal">
             <h3>5. 写入与记录</h3>
-            <p>eligible 事件写入 Outlook/Google Calendar；SQLite 记录 source message id、dedupe key、状态和远端 event id。</p>
+            <p>eligible 事件写入 Outlook/Google Calendar；Hermes 的手动创建请求走受控 <code>/calendar-events</code> 流程，确认后才写入 Outlook。</p>
           </article>
           <article class="step reveal">
             <h3>6. 通知出口</h3>
-            <p>日报、健康报告和故障告警会被格式化成 Hermes-compatible webhook payload；LightVela 路径则通过轻量 HTTP API 查询。</p>
+            <p>日报、健康报告和故障告警会被格式化成 Hermes-compatible webhook payload；Hermes 也可通过轻量 HTTP API 查询日程状态。</p>
           </article>
         </div>
 
@@ -902,7 +902,12 @@ calendar.include_source_email_body = <span class="keyword">true</span>
 <span class="comment"># 输出状态</span>
 ignored       <span class="comment"># 明确不是日程</span>
 needs_review  <span class="comment"># 像活动但不够确定</span>
-created       <span class="comment"># 已写入日历</span></code></pre>
+created       <span class="comment"># 已写入日历</span>
+
+<span class="comment"># Hermes 查日程 / 确认后建日程</span>
+GET  /agenda
+GET  /agenda-range
+POST /calendar-events  <span class="comment"># confirmed: true</span></code></pre>
         </div>
       </div>
     </section>
@@ -938,21 +943,21 @@ created       <span class="comment"># 已写入日历</span></code></pre>
     <section class="section" id="notifications">
       <div class="section-head">
         <div>
-          <p class="section-label">通知联动</p>
-          <h2>把结果推到飞书、QQ 或微信</h2>
+          <p class="section-label">Hermes 联动</p>
+          <h2>能推送，也能查日程和确认建日程</h2>
         </div>
-        <p class="section-note">本项目只产出标准 payload；自托管 Hermes 负责把它转发到具体 IM 渠道。</p>
+        <p class="section-note">本项目暴露受控的本地 HTTP/API 能力；自托管 Hermes 负责把 IM 指令转成安全的查询或确认动作。</p>
       </div>
       <div class="split">
         <div class="explain reveal">
-          <h3>推荐架构</h3>
+          <h3>当前架构</h3>
           <p>邮件日历服务运行在服务器上，生成 <code>daily_digest</code>、<code>fault</code> 和 <code>health_report</code> 三类消息。</p>
           <p>这些消息通过 <code>HERMES_WEBHOOK_URL</code> 发送到自托管 Hermes route，再由它分发到 <code>weixin</code>、<code>qqbot</code> 或 <code>feishu</code>。</p>
-          <p>LightVela 不暴露 raw webhook 时，可以安装能访问 HTTP/API 的技能，让它读取本项目的 <code>/digest</code>、<code>/events</code> 和 <code>/health</code>。</p>
+          <p>Hermes 可以读取本项目的 <code>/agenda</code>、<code>/agenda-range</code>、<code>/digest</code>、<code>/events</code> 和 <code>/health</code> 来回答“今天有什么安排”；如果用户要新增日程，必须先向用户确认标题、日期、时间、时区和日历目标，再调用 <code>/calendar-events</code> 写入 Outlook Calendar。</p>
         </div>
         <div class="code-panel reveal">
           <div class="code-tabs">
-            <span class="code-tab">Notifications</span>
+            <span class="code-tab">Hermes Flow</span>
           </div>
           <pre><code><span class="keyword">python3</span> event_agent.py --config config.local.json \
   notify-digest --hours <span class="number">24</span>
@@ -962,6 +967,16 @@ created       <span class="comment"># 已写入日历</span></code></pre>
 
 <span class="keyword">python3</span> event_agent.py --config config.local.json \
   api-server
+
+<span class="comment"># 自托管 Hermes 查询</span>
+GET /agenda
+GET /agenda-range
+GET /events
+GET /digest?hours=<span class="number">24</span>
+GET /health
+
+<span class="comment"># 建日程必须经过用户确认</span>
+POST /calendar-events  <span class="comment"># confirmed: true</span>
 
 <span class="comment"># payload.type</span>
 daily_digest  <span class="comment"># 每日新增活动</span>
@@ -1003,7 +1018,7 @@ health_report <span class="comment"># 主动健康检查</span></code></pre>
   </main>
 
   <footer class="footer">
-    <p>Outlook Event Automation：一个把活动邮件变成可信日历的自动化代理。仓库托管于 GitHub，主页使用 GSAP timeline 与 ScrollTrigger 构建，并支持 Hermes webhook 与轻量 HTTP API。</p>
+    <p>Outlook Event Automation：一个把活动邮件变成可信日历的自动化代理。仓库托管于 GitHub，主页使用 GSAP timeline 与 ScrollTrigger 构建，并支持自托管 Hermes 查询日程、推送报告，以及在用户确认后通过受控流程创建 Outlook Calendar 事件。</p>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>

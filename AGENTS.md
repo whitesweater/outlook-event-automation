@@ -403,6 +403,8 @@ Run `omx setup` to install all components. Run `omx doctor` to verify installati
 - Never commit `.env`, `config.local.json`, OAuth token files, SQLite databases, `last_run` files, logs, or copied secrets from the SG server.
 - Do not modify Hermes source code for this project. Hermes adaptation belongs in Hermes runtime configuration, home-level `skills/`, `scripts/`, and helper binaries, and in this repo's `outlook_event_automation/integrations/hermes.md`.
 - Prefer Chinese user-facing copy for extracted event titles, documentation, and IM-facing summaries, while preserving proper nouns, room numbers, links, and organization names.
+- Every behavior, API, deployment, or integration change must update the matching handoff documentation in the same change set: root `README.md`, `outlook_event_automation/README.md`, `outlook_event_automation/integrations/*.md`, and `docs/index.html` when the public project story changes.
+- Before final handoff for non-trivial project updates, use a Codex subagent to update or review the GitHub Pages homepage (`docs/index.html`) so the public-facing documentation stays aligned and the project remains easy to transfer.
 - Verification before completion should normally include `python3 -m py_compile outlook_event_automation/event_agent.py`. For Hermes-related changes, also verify the documented helper/API path or explain why remote verification was not run.
 - Use Lore-style commit messages from this file when committing: the first line explains why, with useful trailers such as `Constraint:`, `Tested:`, and `Not-tested:`.
 <!-- OMX:AGENTS-INIT:MANUAL:END -->
