@@ -105,6 +105,17 @@ WINDOWS_TIMEZONE_BY_IANA = {
     "Europe/London": "GMT Standard Time",
 }
 
+IANA_TIMEZONE_BY_WINDOWS = {
+    "UTC": "UTC",
+    "China Standard Time": "Asia/Shanghai",
+    "Taipei Standard Time": "Asia/Taipei",
+    "Eastern Standard Time": "America/New_York",
+    "Central Standard Time": "America/Chicago",
+    "Mountain Standard Time": "America/Denver",
+    "Pacific Standard Time": "America/Los_Angeles",
+    "GMT Standard Time": "Europe/London",
+}
+
 
 class AgentError(RuntimeError):
     """Expected operational error with a user-facing message."""
@@ -1323,6 +1334,149 @@ def write_outlook_event(event: dict[str, Any], config: dict[str, Any]) -> dict[s
     return http_json("POST", url, token=token, payload=payload)
 
 
+def outlook_calendar_view_url(config: dict[str, Any], query: str) -> str:
+    ms = config.get("microsoft", {})
+    calendar_id = ms.get("calendar_id", "").strip()
+    if ms.get("auth_mode") == "client_credentials":
+        user_id = ms.get("user_id", "").strip() or os.environ.get("MICROSOFT_USER_ID", "").strip()
+        if not user_id:
+            raise AgentError("Set microsoft.user_id or MICROSOFT_USER_ID for client_credentials mode.")
+        encoded_user = urllib.parse.quote(user_id, safe="")
+        if calendar_id:
+            encoded_calendar = urllib.parse.quote(calendar_id, safe="")
+            return f"{MICROSOFT_GRAPH_BASE}/users/{encoded_user}/calendars/{encoded_calendar}/calendarView?{query}"
+        return f"{MICROSOFT_GRAPH_BASE}/users/{encoded_user}/calendarView?{query}"
+    if calendar_id:
+        encoded_calendar = urllib.parse.quote(calendar_id, safe="")
+        return f"{MICROSOFT_GRAPH_BASE}/me/calendars/{encoded_calendar}/calendarView?{query}"
+    return f"{MICROSOFT_GRAPH_BASE}/me/calendarView?{query}"
+
+
+def fetch_outlook_calendar_view(
+    config: dict[str, Any],
+    start: datetime,
+    end: datetime,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    token = refresh_microsoft_token(config)
+    timezone_name = config.get("extraction", {}).get("default_timezone", "Asia/Shanghai")
+    windows_timezone = config.get("microsoft", {}).get("calendar_timezone") or WINDOWS_TIMEZONE_BY_IANA.get(
+        timezone_name, "UTC"
+    )
+    params = {
+        "startDateTime": start.isoformat(),
+        "endDateTime": end.isoformat(),
+        "$select": "subject,start,end,location,organizer,webLink,isAllDay,showAs,categories",
+        "$orderby": "start/dateTime",
+        "$top": str(max(1, min(limit, 100))),
+    }
+    url = outlook_calendar_view_url(config, urllib.parse.urlencode(params))
+    headers = {"Prefer": f'outlook.timezone="{windows_timezone}"'}
+    events: list[dict[str, Any]] = []
+    while url and len(events) < limit:
+        page = http_json("GET", url, token=token, headers=headers)
+        events.extend(page.get("value", []))
+        url = page.get("@odata.nextLink", "")
+    return events[:limit]
+
+
+def parse_agenda_date(value: str | None, timezone_name: str) -> datetime:
+    try:
+        zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        zone = UTC
+    raw = (value or "today").strip().lower()
+    today = utc_now().astimezone(zone).date()
+    if raw in {"today", "今天"}:
+        target = today
+    elif raw in {"tomorrow", "明天"}:
+        target = today + timedelta(days=1)
+    else:
+        try:
+            target = datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise AgentError("Agenda date must be today, tomorrow, 今天, 明天, or YYYY-MM-DD.") from exc
+    return datetime(target.year, target.month, target.day, tzinfo=zone)
+
+
+def graph_event_datetime(value: dict[str, Any], fallback_timezone: str) -> datetime | None:
+    raw = str(value.get("dateTime") or "").strip()
+    if not raw:
+        return None
+    tz_name = str(value.get("timeZone") or "").strip()
+    default_timezone = IANA_TIMEZONE_BY_WINDOWS.get(tz_name, fallback_timezone)
+    try:
+        return parse_datetime(raw, default_timezone)
+    except AgentError:
+        return None
+
+
+def format_agenda_time(item: dict[str, Any], fallback_timezone: str) -> str:
+    if item.get("isAllDay"):
+        return "全天"
+    start = graph_event_datetime(item.get("start") or {}, fallback_timezone)
+    end = graph_event_datetime(item.get("end") or {}, fallback_timezone)
+    if not start:
+        return "时间待确认"
+    if end:
+        return f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+    return start.strftime("%H:%M")
+
+
+def normalize_agenda_item(item: dict[str, Any], fallback_timezone: str) -> dict[str, Any]:
+    start = graph_event_datetime(item.get("start") or {}, fallback_timezone)
+    end = graph_event_datetime(item.get("end") or {}, fallback_timezone)
+    organizer = ((item.get("organizer") or {}).get("emailAddress") or {}).get("name") or ""
+    return {
+        "title": item.get("subject") or "未命名日程",
+        "time": format_agenda_time(item, fallback_timezone),
+        "start_time": start.isoformat() if start else "",
+        "end_time": end.isoformat() if end else "",
+        "is_all_day": bool(item.get("isAllDay")),
+        "location": ((item.get("location") or {}).get("displayName") or "").strip(),
+        "organizer": organizer,
+        "show_as": item.get("showAs", ""),
+        "web_link": item.get("webLink", ""),
+        "categories": item.get("categories", []),
+    }
+
+
+def build_outlook_agenda(config: dict[str, Any], date_value: str | None, limit: int) -> dict[str, Any]:
+    timezone_name = config.get("extraction", {}).get("default_timezone", "Asia/Shanghai")
+    start = parse_agenda_date(date_value, timezone_name)
+    end = start + timedelta(days=1)
+    items = [
+        normalize_agenda_item(item, timezone_name)
+        for item in fetch_outlook_calendar_view(config, start, end, limit=limit)
+    ]
+    items.sort(key=lambda item: (not item.get("is_all_day"), item.get("start_time") or item.get("time") or ""))
+    date_label = start.strftime("%Y-%m-%d")
+    lines = [
+        "## 今日日程安排" if (date_value or "today").strip().lower() in {"today", "今天"} else "## 日程安排",
+        "",
+        f"- 日期：{date_label}",
+        f"- 时区：{timezone_name}",
+        f"- 日程数：{len(items)}",
+    ]
+    if not items:
+        lines.extend(["", "今天暂时没有日程安排。"])
+    else:
+        lines.extend(["", "### 日程"])
+        for item in items:
+            location = item.get("location") or "地点未填写"
+            lines.append(f"- `{item['time']}` {item['title']}｜{location}")
+    return {
+        "title": f"{date_label} 日程安排",
+        "markdown": "\n".join(lines),
+        "payload": {
+            "date": date_label,
+            "timezone": timezone_name,
+            "events": items,
+            "total_events": len(items),
+        },
+    }
+
+
 def db() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -1922,6 +2076,7 @@ def api_routes() -> dict[str, Any]:
         "routes": {
             "GET /": "List routes",
             "GET /health": "Service health report JSON",
+            "GET /agenda?date=today&limit=50": "Outlook Calendar agenda for a day",
             "GET /digest?hours=24&limit=20": "Activity digest JSON and markdown",
             "GET /events?status=created&hours=24&limit=20": "Processed events from SQLite",
             "GET /review?hours=24&limit=20": "needs_review events",
@@ -1945,6 +2100,9 @@ def handle_api_get(path: str, query: dict[str, str], config: dict[str, Any]) -> 
             maximum=10080,
         )
         return 200, build_health_report(config, max_age)
+    if path == "/agenda":
+        limit = query_int(query, "limit", int(api.get("agenda_limit", 50)), maximum=200)
+        return 200, build_outlook_agenda(config, query.get("date") or "today", limit)
     if path == "/digest":
         hours = query_int(query, "hours", default_hours, maximum=24 * 365)
         limit = query_int(query, "limit", default_limit, maximum=200)
@@ -2258,6 +2416,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Notification target override",
     )
 
+    agenda = sub.add_parser("agenda", help="Print Outlook Calendar agenda for a day")
+    agenda.add_argument("--date", default="today", help="today, tomorrow, 今天, 明天, or YYYY-MM-DD")
+    agenda.add_argument("--limit", type=int, default=50, help="Maximum calendar events to include")
+
     api = sub.add_parser("api-server", help="Run a lightweight HTTP API for agents")
     api.add_argument("--host", help="Bind host; defaults to api.host or 127.0.0.1")
     api.add_argument("--port", type=int, help="Bind port; defaults to api.port or 8791")
@@ -2290,6 +2452,9 @@ def main() -> int:
             notify_digest(args, config)
         elif args.command == "health-report":
             health_report(args, config)
+        elif args.command == "agenda":
+            agenda = build_outlook_agenda(config, args.date, args.limit)
+            print(agenda["markdown"])
         elif args.command == "api-server":
             api_server(args, config)
         elif args.command == "show-config":

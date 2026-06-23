@@ -10,7 +10,8 @@
     "redirect_uri": "http://localhost:5000/getAToken",
     "scopes": [
       "offline_access",
-      "Mail.Read"
+      "Mail.Read",
+      "Calendars.ReadWrite"
     ],
     "token_file": "data/microsoft_token.json",
     "mail_folder": "inbox",
