@@ -146,11 +146,12 @@ curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
 日程查询走 Microsoft Graph Calendar，需要 Microsoft delegated scopes 至少包含
 `Calendars.Read` 或 `Calendars.ReadWrite`。如果要让 Hermes 每天固定推送当天日程，
 推荐使用 Hermes Cron 的 `--no-agent --script` 模式：脚本调用 `/agenda`，
-Hermes 负责定时和投递。
+Hermes 负责定时和投递。如果要让 Hermes Agent 回答“最近三天”或“最近一周”的
+问题，给 Hermes 配置 `outlook-mail-events` skill，并让 skill 调用 `/agenda-range`。
 
 更多说明：
 
-- `integrations/hermes.md`
+- `integrations/hermes.md`：自托管 Hermes 的 provider、webhook、skill、Cron、排障和维护手册
 - `integrations/lightvela.md`
 
 ## systemd

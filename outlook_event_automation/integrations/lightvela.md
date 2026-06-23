@@ -38,6 +38,8 @@ python3 event_agent.py --config config.local.json api-server
 GET  /                         # 查看路由
 GET  /health                   # 服务健康报告
 GET  /digest?hours=24&limit=20 # 活动摘要，含 markdown
+GET  /agenda?date=today        # 指定日期的 Outlook Calendar 日程
+GET  /agenda-range?days=7      # 多日 Outlook Calendar 日程
 GET  /events?status=created    # 已处理事件
 GET  /review                   # needs_review 邮件
 GET  /last-run                 # 最近一次扫描结果

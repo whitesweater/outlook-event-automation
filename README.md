@@ -229,17 +229,19 @@ webhook payload 统一包含：
 
 服务常驻运行时，如果邮件读取、AI 抽取或日历写入抛出异常，会发送 `fault` 告警；`fault_cooldown_minutes` 用来避免同一个故障刷屏。
 
-LightVela 或其他 agent 查询 API：
+Hermes / LightVela 或其他 agent 查询 API：
 
 ```bash
 python3 event_agent.py --config config.local.json api-server
 curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
   http://127.0.0.1:8791/digest?hours=24
+curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
+  'http://127.0.0.1:8791/agenda-range?date=today&days=7&limit=100'
 ```
 
 更多配置见：
 
-- `outlook_event_automation/integrations/hermes.md`
+- `outlook_event_automation/integrations/hermes.md`: 自托管 Hermes 的 provider、webhook、skill、Cron、排障和维护手册
 - `outlook_event_automation/integrations/lightvela.md`
 
 ## 状态语义
