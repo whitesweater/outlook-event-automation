@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import hmac
 import html
 import http.server
 import json
@@ -193,6 +194,26 @@ def http_post_raw(
     timeout: int = 30,
 ) -> tuple[int, str]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    merged_headers = {"Content-Type": "application/json; charset=utf-8"}
+    merged_headers.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=merged_headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise AgentError(f"HTTP {exc.code} from {url}: {details}") from exc
+    except urllib.error.URLError as exc:
+        raise AgentError(f"Network error from {url}: {exc}") from exc
+
+
+def http_post_json_bytes(
+    url: str,
+    *,
+    body: bytes,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[int, str]:
     merged_headers = {"Content-Type": "application/json; charset=utf-8"}
     merged_headers.update(headers or {})
     req = urllib.request.Request(url, data=body, headers=merged_headers, method="POST")
@@ -1428,10 +1449,27 @@ def notifications_enabled(config: dict[str, Any]) -> bool:
     return bool(notification_config(config).get("enabled", False))
 
 
+def notification_target(config: dict[str, Any], override: str | None = None) -> str:
+    value = (override or notification_config(config).get("notify_target") or "webhook").strip()
+    return value or "webhook"
+
+
 def notification_webhook_url(config: dict[str, Any]) -> str:
     notify = notification_config(config)
     env_name = notify.get("webhook_url_env", "NOTIFY_WEBHOOK_URL")
     return (os.environ.get(env_name, "") or notify.get("webhook_url", "")).strip()
+
+
+def hermes_webhook_url(config: dict[str, Any]) -> str:
+    notify = notification_config(config)
+    env_name = notify.get("hermes_webhook_url_env", "HERMES_WEBHOOK_URL")
+    return (os.environ.get(env_name, "") or notify.get("hermes_webhook_url", "")).strip()
+
+
+def hermes_webhook_secret(config: dict[str, Any]) -> str:
+    notify = notification_config(config)
+    env_name = notify.get("hermes_webhook_secret_env", "HERMES_WEBHOOK_SECRET")
+    return (os.environ.get(env_name, "") or notify.get("hermes_webhook_secret", "")).strip()
 
 
 def notification_headers(config: dict[str, Any]) -> dict[str, str]:
@@ -1444,6 +1482,27 @@ def notification_headers(config: dict[str, Any]) -> dict[str, str]:
     return headers
 
 
+def notification_envelope(
+    *,
+    event_type: str,
+    title: str,
+    markdown: str,
+    severity: str,
+    payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "source": "outlook_event_automation",
+        "event_type": event_type,
+        "type": event_type,
+        "severity": severity,
+        "title": title,
+        "markdown": markdown,
+        "text": strip_markdown(markdown),
+        "created_at": utc_now().isoformat(),
+        "payload": payload or {},
+    }
+
+
 def send_notification(
     config: dict[str, Any],
     *,
@@ -1453,37 +1512,79 @@ def send_notification(
     severity: str = "info",
     payload: dict[str, Any] | None = None,
     force: bool = False,
+    target: str | None = None,
 ) -> bool:
     if not force and not notifications_enabled(config):
         return False
     notify = notification_config(config)
-    provider = notify.get("provider", "webhook")
-    if provider != "webhook":
-        raise AgentError(f"Unsupported notification provider: {provider}")
-    url = notification_webhook_url(config)
+    selected = notification_target(config, target)
+    envelope = notification_envelope(
+        event_type=event_type,
+        title=title,
+        markdown=markdown,
+        severity=severity,
+        payload=payload,
+    )
+    if selected == "webhook":
+        provider = notify.get("provider", "webhook")
+        if provider != "webhook":
+            raise AgentError(f"Unsupported notification provider: {provider}")
+        url = notification_webhook_url(config)
+        if not url:
+            raise AgentError(
+                "Notification webhook URL is missing. Set NOTIFY_WEBHOOK_URL or "
+                "notifications.webhook_url."
+            )
+        status, _ = http_post_raw(
+            url,
+            payload=envelope,
+            headers=notification_headers(config),
+            timeout=int(notify.get("webhook_timeout_seconds", 30)),
+        )
+    elif selected == "hermes-webhook":
+        status, _ = send_hermes_webhook(config, envelope)
+    else:
+        raise AgentError(f"Unsupported notify target: {selected}")
+    print(f"Notification sent: target={selected} type={event_type} status={status}")
+    return True
+
+
+def send_hermes_webhook(config: dict[str, Any], envelope: dict[str, Any]) -> tuple[int, str]:
+    notify = notification_config(config)
+    url = hermes_webhook_url(config)
     if not url:
         raise AgentError(
-            "Notification webhook URL is missing. Set NOTIFY_WEBHOOK_URL or "
-            "notifications.webhook_url."
+            "Hermes webhook URL is missing. Set HERMES_WEBHOOK_URL or "
+            "notifications.hermes_webhook_url."
         )
-    envelope = {
-        "source": "outlook_event_automation",
-        "type": event_type,
-        "severity": severity,
-        "title": title,
-        "markdown": markdown,
-        "text": strip_markdown(markdown),
-        "created_at": utc_now().isoformat(),
-        "payload": payload or {},
+    secret = hermes_webhook_secret(config)
+    if not secret:
+        raise AgentError(
+            "Hermes webhook secret is missing. Set HERMES_WEBHOOK_SECRET or "
+            "notifications.hermes_webhook_secret."
+        )
+    body = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    request_id = deterministic_uuid(
+        "|".join(
+            [
+                str(envelope.get("source", "")),
+                str(envelope.get("event_type", "")),
+                str(envelope.get("created_at", "")),
+                str(envelope.get("title", "")),
+            ]
+        )
+    )
+    headers = {
+        "X-Webhook-Signature": signature,
+        "X-Request-ID": request_id,
     }
-    status, _ = http_post_raw(
+    return http_post_json_bytes(
         url,
-        payload=envelope,
-        headers=notification_headers(config),
+        body=body,
+        headers=headers,
         timeout=int(notify.get("webhook_timeout_seconds", 30)),
     )
-    print(f"Notification sent: type={event_type} status={status}")
-    return True
 
 
 def strip_markdown(value: str) -> str:
@@ -1561,19 +1662,29 @@ def notify_fault(config: dict[str, Any], message: str, context: dict[str, Any]) 
         print(f"[{utc_now().isoformat()}] ERROR: failed to send fault notification: {exc}", file=sys.stderr)
 
 
-def query_processed_events(hours: int, limit: int) -> list[dict[str, Any]]:
+def query_processed_events(
+    hours: int,
+    limit: int,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
     since = utc_now() - timedelta(hours=hours)
     conn = db()
+    where = "WHERE created_at >= ?"
+    params: list[Any] = [since.isoformat()]
+    if status:
+        where += " AND status = ?"
+        params.append(status)
+    params.append(limit)
     rows = conn.execute(
-        """
+        f"""
         SELECT source, source_email_id, status, sink, remote_event_id, title,
                start_time, created_at, extraction_json
         FROM processed_events
-        WHERE created_at >= ?
+        {where}
         ORDER BY created_at DESC
         LIMIT ?
         """,
-        (since.isoformat(), limit),
+        params,
     ).fetchall()
     events: list[dict[str, Any]] = []
     for row in rows:
@@ -1664,6 +1775,7 @@ def notify_digest(args: argparse.Namespace, config: dict[str, Any]) -> None:
         markdown=digest["markdown"],
         severity="info",
         payload=digest["payload"],
+        target=getattr(args, "notify_target", None),
     )
     if not sent:
         print("Notifications are disabled. Set notifications.enabled=true to send.")
@@ -1726,9 +1838,217 @@ def health_report(args: argparse.Namespace, config: dict[str, Any]) -> None:
         markdown=report["markdown"],
         severity=report["severity"],
         payload=report["payload"],
+        target=getattr(args, "notify_target", None),
     )
     if not sent:
         print("Notifications are disabled. Set notifications.enabled=true to send.")
+
+
+def api_config(config: dict[str, Any]) -> dict[str, Any]:
+    return config.get("api", {}) or {}
+
+
+def api_token(config: dict[str, Any]) -> str:
+    api = api_config(config)
+    env_name = api.get("token_env", "OUTLOOK_AGENT_API_TOKEN")
+    return (os.environ.get(env_name, "") or api.get("token", "")).strip()
+
+
+def is_loopback_host(host: str) -> bool:
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def parse_query(path: str) -> tuple[str, dict[str, str]]:
+    parsed = urllib.parse.urlparse(path)
+    values = urllib.parse.parse_qs(parsed.query)
+    query = {key: items[-1] for key, items in values.items() if items}
+    return parsed.path, query
+
+
+def query_int(
+    values: dict[str, str],
+    key: str,
+    default: int,
+    minimum: int = 1,
+    maximum: int = 1000,
+) -> int:
+    raw = values.get(key, "")
+    if not raw:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError as exc:
+        raise AgentError(f"Expected integer query parameter `{key}`, got {raw!r}.") from exc
+    return max(minimum, min(maximum, parsed))
+
+
+def query_bool(values: dict[str, str], key: str, default: bool = False) -> bool:
+    raw = values.get(key, "")
+    if not raw:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def json_response(handler: http.server.BaseHTTPRequestHandler, status: int, payload: Any) -> None:
+    body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def check_api_auth(handler: http.server.BaseHTTPRequestHandler, config: dict[str, Any]) -> bool:
+    expected = api_token(config)
+    if not expected:
+        return True
+    auth = handler.headers.get("Authorization", "")
+    header_token = handler.headers.get("X-Outlook-Agent-Token", "")
+    bearer = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+    return hmac.compare_digest(expected, bearer or header_token)
+
+
+def last_run_summary() -> dict[str, Any]:
+    path = DATA_DIR / "last_run.json"
+    if not path.exists():
+        return {"exists": False, "path": str(path)}
+    value = load_json(path)
+    return {"exists": True, "path": str(path), **value}
+
+
+def api_routes() -> dict[str, Any]:
+    return {
+        "service": "outlook_event_automation",
+        "routes": {
+            "GET /": "List routes",
+            "GET /health": "Service health report JSON",
+            "GET /digest?hours=24&limit=20": "Activity digest JSON and markdown",
+            "GET /events?status=created&hours=24&limit=20": "Processed events from SQLite",
+            "GET /review?hours=24&limit=20": "needs_review events",
+            "GET /last-run": "Last pipeline run result",
+            "POST /scan?source=outlook&limit=20": "Run a dry scan; write=true requires api.allow_write_actions=true",
+        },
+    }
+
+
+def handle_api_get(path: str, query: dict[str, str], config: dict[str, Any]) -> tuple[int, Any]:
+    api = api_config(config)
+    default_hours = int(api.get("default_hours", 24))
+    default_limit = int(api.get("default_limit", 20))
+    if path == "/":
+        return 200, api_routes()
+    if path == "/health":
+        max_age = query_int(
+            query,
+            "max_last_run_age_minutes",
+            int(api.get("health_max_last_run_age_minutes", 120)),
+            maximum=10080,
+        )
+        return 200, build_health_report(config, max_age)
+    if path == "/digest":
+        hours = query_int(query, "hours", default_hours, maximum=24 * 365)
+        limit = query_int(query, "limit", default_limit, maximum=200)
+        return 200, build_daily_digest(config, hours, limit)
+    if path == "/events":
+        hours = query_int(query, "hours", default_hours, maximum=24 * 365)
+        limit = query_int(query, "limit", default_limit, maximum=500)
+        status = query.get("status") or None
+        return 200, {
+            "events": query_processed_events(hours, limit, status),
+            "hours": hours,
+            "status": status,
+        }
+    if path == "/review":
+        hours = query_int(query, "hours", default_hours, maximum=24 * 365)
+        limit = query_int(query, "limit", default_limit, maximum=200)
+        return 200, {
+            "events": query_processed_events(hours, limit, "needs_review"),
+            "hours": hours,
+            "status": "needs_review",
+        }
+    if path == "/last-run":
+        return 200, last_run_summary()
+    return 404, {"error": "not_found", "routes": api_routes()["routes"]}
+
+
+def handle_api_post(path: str, query: dict[str, str], config: dict[str, Any]) -> tuple[int, Any]:
+    if path != "/scan":
+        return 404, {"error": "not_found", "routes": api_routes()["routes"]}
+    api = api_config(config)
+    write = query_bool(query, "write", False)
+    if write and not bool(api.get("allow_write_actions", False)):
+        return 403, {
+            "error": "write_not_allowed",
+            "message": "Set api.allow_write_actions=true before using POST /scan?write=true.",
+        }
+    source = query.get("source") or config.get("source", "outlook")
+    sink = query.get("sink") or ("none" if not write else config.get("calendar", {}).get("sink", "outlook"))
+    if source not in {"gmail", "outlook", "fixture"}:
+        return 400, {"error": "invalid_source", "allowed": ["gmail", "outlook", "fixture"]}
+    if sink not in {"google", "outlook", "none"}:
+        return 400, {"error": "invalid_sink", "allowed": ["google", "outlook", "none"]}
+    limit = query_int(query, "limit", int(api.get("default_limit", 20)), maximum=200)
+    force = query_bool(query, "force", False)
+    batch_size = query_int(query, "batch_size", 0, minimum=0, maximum=100) or None
+    run_args = argparse.Namespace(
+        source=source,
+        fixture=query.get("fixture"),
+        sink=sink,
+        limit=limit,
+        write=write,
+        force=force,
+        batch_size=batch_size,
+    )
+    run_pipeline(run_args, config)
+    return 200, {
+        "ok": True,
+        "source": source,
+        "sink": sink,
+        "write": write,
+        "last_run": last_run_summary(),
+    }
+
+
+def api_server(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    api = api_config(config)
+    host = args.host or api.get("host", "127.0.0.1")
+    port = int(args.port or api.get("port", 8791))
+    token = api_token(config)
+    if not is_loopback_host(host) and not token:
+        raise AgentError(
+            "Refusing to bind API server on a non-loopback host without OUTLOOK_AGENT_API_TOKEN."
+        )
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - stdlib callback name
+            self.handle_request("GET")
+
+        def do_POST(self) -> None:  # noqa: N802 - stdlib callback name
+            self.handle_request("POST")
+
+        def handle_request(self, method: str) -> None:
+            try:
+                if not check_api_auth(self, config):
+                    json_response(self, 401, {"error": "unauthorized"})
+                    return
+                path, query = parse_query(self.path)
+                if method == "GET":
+                    status, payload = handle_api_get(path, query, config)
+                else:
+                    status, payload = handle_api_post(path, query, config)
+                json_response(self, status, payload)
+            except Exception as exc:
+                json_response(self, 500, {"error": "internal_error", "message": str(exc)})
+
+        def log_message(self, fmt: str, *args: Any) -> None:
+            print(f"[{utc_now().isoformat()}] API {self.address_string()} {fmt % args}")
+
+    print(f"Starting API server on http://{host}:{port}")
+    if token:
+        print("API token authentication is enabled.")
+    else:
+        print("API token authentication is disabled; loopback binding only.")
+    http.server.ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
 def run_pipeline(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -1922,11 +2242,25 @@ def build_parser() -> argparse.ArgumentParser:
     digest.add_argument("--hours", type=int, help="Lookback window in hours")
     digest.add_argument("--limit", type=int, help="Maximum processed rows to include")
     digest.add_argument("--dry-run", action="store_true", help="Print without sending webhook")
+    digest.add_argument(
+        "--notify-target",
+        choices=["webhook", "hermes-webhook"],
+        help="Notification target override",
+    )
 
     health = sub.add_parser("health-report", help="Send or preview a service health report")
     health.add_argument("--max-last-run-age-minutes", type=int, help="Staleness threshold")
     health.add_argument("--always", action="store_true", help="Send even when healthy")
     health.add_argument("--dry-run", action="store_true", help="Print without sending webhook")
+    health.add_argument(
+        "--notify-target",
+        choices=["webhook", "hermes-webhook"],
+        help="Notification target override",
+    )
+
+    api = sub.add_parser("api-server", help="Run a lightweight HTTP API for agents")
+    api.add_argument("--host", help="Bind host; defaults to api.host or 127.0.0.1")
+    api.add_argument("--port", type=int, help="Bind port; defaults to api.port or 8791")
 
     sub.add_parser("show-config", help="Print the effective config")
     return parser
@@ -1956,6 +2290,8 @@ def main() -> int:
             notify_digest(args, config)
         elif args.command == "health-report":
             health_report(args, config)
+        elif args.command == "api-server":
+            api_server(args, config)
         elif args.command == "show-config":
             print(json.dumps(config, ensure_ascii=False, indent=2))
         else:

@@ -42,7 +42,8 @@ flowchart LR
 - 守护规则：`Daily Event Alert` 直接忽略；取消、撤回、多活动或缺时间强制复核。
 - 去重审计：SQLite 记录 source message id、dedupe key、处理状态和远端 event id。
 - 常驻运行：`serve --write` 可由 systemd 托管，适合部署在小型服务器上。
-- 自动推送：通过通用 webhook 产出日报和故障告警，OpenClaw、harmess 或其他 IM 桥接层可以继续转发到飞书、QQ、微信。
+- 自动推送：通过 Hermes-compatible webhook 产出日报和故障告警，由自托管 Hermes 转发到微信、QQ、飞书。
+- Agent 查询：提供轻量 HTTP API，方便 LightVela、Hermes skill 或其他 agent 交互式读取活动摘要与运行状态。
 
 ## 目录结构
 
@@ -55,7 +56,13 @@ flowchart LR
     ├── config.example.json         # 可提交的配置模板
     ├── .env.example                # 可提交的环境变量模板
     ├── deploy/
-    │   └── outlook-event-agent.service
+    │   ├── outlook-event-agent.service
+    │   ├── outlook-event-agent-api.service
+    │   ├── outlook-event-agent-digest.service
+    │   └── outlook-event-agent-digest.timer
+    ├── integrations/
+    │   ├── hermes.md
+    │   └── lightvela.md
     ├── scripts/
     │   └── install-systemd.sh
     └── data/
@@ -86,6 +93,9 @@ MICROSOFT_CLIENT_SECRET=replace-with-client-secret
 MICROSOFT_USER_ID=replace-with-mailbox-upn
 NOTIFY_WEBHOOK_URL=
 NOTIFY_WEBHOOK_TOKEN=
+HERMES_WEBHOOK_URL=
+HERMES_WEBHOOK_SECRET=
+OUTLOOK_AGENT_API_TOKEN=
 ```
 
 授权 Microsoft：
@@ -142,15 +152,19 @@ python3 /opt/outlook-event-agent/event_agent.py \
   --config /opt/outlook-event-agent/config.local.json serve --write
 ```
 
-## OpenClaw / harmess 推送集成
+## Hermes / LightVela 集成
 
-这个组件不直接绑定某一个 IM 平台，而是发送标准 webhook payload。推荐架构是：
+这个组件不直接绑定某一个 IM 平台。现在推荐两条路：
+
+- 自托管 Hermes：本服务主动发送 Hermes webhook，Hermes 负责转发到 `weixin`、`qqbot` 或 `feishu`。
+- LightVela：公开文档没有暴露 raw webhook route，更适合作为对话入口，通过 SkillHub 技能访问本项目的 HTTP API。
+
+推荐自托管 Hermes 架构：
 
 ```mermaid
 flowchart LR
-  A["邮件日历服务"] -->|"daily_digest / fault / health_report"| B["Webhook Receiver"]
-  B --> C["OpenClaw / harmess"]
-  C --> D["飞书 / QQ / 微信"]
+  A["邮件日历服务"] -->|"daily_digest / fault / health_report"| B["Self-hosted Hermes"]
+  B --> C["微信 / QQ / 飞书"]
 ```
 
 开启方式：
@@ -162,19 +176,20 @@ flowchart LR
   "notifications": {
     "enabled": true,
     "provider": "webhook",
-    "webhook_url_env": "NOTIFY_WEBHOOK_URL",
-    "webhook_token_env": "NOTIFY_WEBHOOK_TOKEN",
+    "notify_target": "hermes-webhook",
+    "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
+    "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
     "daily_digest_hours": 24,
     "fault_cooldown_minutes": 30
   }
 }
 ```
 
-2. 在 `.env` 里设置 OpenClaw / harmess 的 webhook receiver：
+2. 在 `.env` 里设置 Hermes route：
 
 ```text
-NOTIFY_WEBHOOK_URL=https://your-openclaw-or-harmess-webhook.example/push
-NOTIFY_WEBHOOK_TOKEN=
+HERMES_WEBHOOK_URL=https://your-hermes.example/webhooks/outlook-event-agent
+HERMES_WEBHOOK_SECRET=replace-with-route-secret
 ```
 
 3. 预览日报：
@@ -213,6 +228,19 @@ webhook payload 统一包含：
 - `payload`: 结构化事件、统计或故障上下文
 
 服务常驻运行时，如果邮件读取、AI 抽取或日历写入抛出异常，会发送 `fault` 告警；`fault_cooldown_minutes` 用来避免同一个故障刷屏。
+
+LightVela 或其他 agent 查询 API：
+
+```bash
+python3 event_agent.py --config config.local.json api-server
+curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
+  http://127.0.0.1:8791/digest?hours=24
+```
+
+更多配置见：
+
+- `outlook_event_automation/integrations/hermes.md`
+- `outlook_event_automation/integrations/lightvela.md`
 
 ## 状态语义
 

@@ -752,7 +752,7 @@
           <div class="hero-point"><b>给用户</b><span>你只需要把活动邮件送进目标邮箱，服务会自动识别、过滤、写入日历。</span></div>
           <div class="hero-point"><b>给开发者</b><span>核心是 Microsoft Graph/Gmail API + Responses API + SQLite 去重 + systemd 常驻。</span></div>
           <div class="hero-point"><b>保守写入</b><span>多活动汇总、取消通知、时间冲突、信息不完整，不会自动写进日历。</span></div>
-          <div class="hero-point"><b>自动推送</b><span>日报和故障告警可以通过 webhook 交给 OpenClaw / harmess 转发到 IM。</span></div>
+          <div class="hero-point"><b>自动推送</b><span>日报和故障告警可以通过自托管 Hermes 转发到微信、QQ 或飞书。</span></div>
         </div>
         <div class="actions">
           <a class="button primary" href="https://github.com/whitesweater/outlook-event-automation">查看仓库</a>
@@ -843,7 +843,7 @@
         </article>
         <article class="card reveal">
           <h3>每天自动汇报</h3>
-          <p>可以定时生成“过去 24 小时新增活动”和“待复核邮件”日报，通过 OpenClaw / harmess 推到飞书、QQ 或微信。</p>
+          <p>可以定时生成“过去 24 小时新增活动”和“待复核邮件”日报，通过 Hermes 推到微信、QQ 或飞书。</p>
         </article>
       </div>
     </section>
@@ -880,7 +880,7 @@
           </article>
           <article class="step reveal">
             <h3>6. 通知出口</h3>
-            <p>日报、健康报告和故障告警会被格式化成统一 webhook payload，交给 OpenClaw / harmess 做 IM 分发。</p>
+            <p>日报、健康报告和故障告警会被格式化成 Hermes-compatible webhook payload；LightVela 路径则通过轻量 HTTP API 查询。</p>
           </article>
         </div>
 
@@ -941,14 +941,14 @@ created       <span class="comment"># 已写入日历</span></code></pre>
           <p class="section-label">通知联动</p>
           <h2>把结果推到飞书、QQ 或微信</h2>
         </div>
-        <p class="section-note">本项目只产出标准 payload；OpenClaw / harmess 负责把它转发到具体 IM 渠道。</p>
+        <p class="section-note">本项目只产出标准 payload；自托管 Hermes 负责把它转发到具体 IM 渠道。</p>
       </div>
       <div class="split">
         <div class="explain reveal">
           <h3>推荐架构</h3>
           <p>邮件日历服务运行在服务器上，生成 <code>daily_digest</code>、<code>fault</code> 和 <code>health_report</code> 三类消息。</p>
-          <p>这些消息通过 <code>NOTIFY_WEBHOOK_URL</code> 发送到你的 OpenClaw / harmess webhook receiver，再由它分发到飞书、QQ、微信或企业微信。</p>
-          <p>这样日历服务不需要知道每个 IM 平台的登录态和协议细节，后续换渠道也不用改邮件处理核心。</p>
+          <p>这些消息通过 <code>HERMES_WEBHOOK_URL</code> 发送到自托管 Hermes route，再由它分发到 <code>weixin</code>、<code>qqbot</code> 或 <code>feishu</code>。</p>
+          <p>LightVela 不暴露 raw webhook 时，可以安装能访问 HTTP/API 的技能，让它读取本项目的 <code>/digest</code>、<code>/events</code> 和 <code>/health</code>。</p>
         </div>
         <div class="code-panel reveal">
           <div class="code-tabs">
@@ -958,7 +958,10 @@ created       <span class="comment"># 已写入日历</span></code></pre>
   notify-digest --hours <span class="number">24</span>
 
 <span class="keyword">python3</span> event_agent.py --config config.local.json \
-  health-report --always
+  health-report --always --notify-target hermes-webhook
+
+<span class="keyword">python3</span> event_agent.py --config config.local.json \
+  api-server
 
 <span class="comment"># payload.type</span>
 daily_digest  <span class="comment"># 每日新增活动</span>
@@ -1000,7 +1003,7 @@ health_report <span class="comment"># 主动健康检查</span></code></pre>
   </main>
 
   <footer class="footer">
-    <p>Outlook Event Automation：一个把活动邮件变成可信日历的自动化代理。仓库托管于 GitHub，主页使用 GSAP timeline 与 ScrollTrigger 构建，并支持 webhook 通知出口。</p>
+    <p>Outlook Event Automation：一个把活动邮件变成可信日历的自动化代理。仓库托管于 GitHub，主页使用 GSAP timeline 与 ScrollTrigger 构建，并支持 Hermes webhook 与轻量 HTTP API。</p>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>

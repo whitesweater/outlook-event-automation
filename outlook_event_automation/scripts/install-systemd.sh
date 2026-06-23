@@ -6,6 +6,7 @@ APP_USER="${APP_USER:-outlook-agent}"
 SERVICE_NAME="${SERVICE_NAME:-outlook-event-agent.service}"
 DIGEST_SERVICE_NAME="${DIGEST_SERVICE_NAME:-outlook-event-agent-digest.service}"
 DIGEST_TIMER_NAME="${DIGEST_TIMER_NAME:-outlook-event-agent-digest.timer}"
+API_SERVICE_NAME="${API_SERVICE_NAME:-outlook-event-agent-api.service}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo APP_DIR=$APP_DIR bash scripts/install-systemd.sh" >&2
@@ -31,6 +32,7 @@ fi
 install -m 0644 "$APP_DIR/deploy/outlook-event-agent.service" "/etc/systemd/system/$SERVICE_NAME"
 install -m 0644 "$APP_DIR/deploy/outlook-event-agent-digest.service" "/etc/systemd/system/$DIGEST_SERVICE_NAME"
 install -m 0644 "$APP_DIR/deploy/outlook-event-agent-digest.timer" "/etc/systemd/system/$DIGEST_TIMER_NAME"
+install -m 0644 "$APP_DIR/deploy/outlook-event-agent-api.service" "/etc/systemd/system/$API_SERVICE_NAME"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 systemctl daemon-reload
@@ -47,4 +49,6 @@ Next:
    journalctl -u $SERVICE_NAME -f
 4. Optional daily digest after notifications are configured:
    sudo systemctl enable --now $DIGEST_TIMER_NAME
+5. Optional local agent API after OUTLOOK_AGENT_API_TOKEN is configured:
+   sudo systemctl enable --now $API_SERVICE_NAME
 EOF

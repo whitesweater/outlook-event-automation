@@ -25,6 +25,9 @@ MICROSOFT_CLIENT_SECRET=replace-with-client-secret
 MICROSOFT_USER_ID=replace-with-mailbox-upn
 NOTIFY_WEBHOOK_URL=
 NOTIFY_WEBHOOK_TOKEN=
+HERMES_WEBHOOK_URL=
+HERMES_WEBHOOK_SECRET=
+OUTLOOK_AGENT_API_TOKEN=
 ```
 
 ## 授权
@@ -83,7 +86,7 @@ python3 event_agent.py --config config.local.json serve --write
 - `dry_run`: 测试模式下的可写候选。
 - `created`: 已写入目标日历。
 
-## OpenClaw / harmess 推送
+## Hermes / LightVela 集成
 
 开启 `config.local.json`：
 
@@ -92,19 +95,20 @@ python3 event_agent.py --config config.local.json serve --write
   "notifications": {
     "enabled": true,
     "provider": "webhook",
-    "webhook_url_env": "NOTIFY_WEBHOOK_URL",
-    "webhook_token_env": "NOTIFY_WEBHOOK_TOKEN",
+    "notify_target": "hermes-webhook",
+    "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
+    "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
     "daily_digest_hours": 24,
     "fault_cooldown_minutes": 30
   }
 }
 ```
 
-在 `.env` 中填入 OpenClaw / harmess 的 webhook receiver：
+在 `.env` 中填入自托管 Hermes route：
 
 ```text
-NOTIFY_WEBHOOK_URL=https://your-openclaw-or-harmess-webhook.example/push
-NOTIFY_WEBHOOK_TOKEN=
+HERMES_WEBHOOK_URL=https://your-hermes.example/webhooks/outlook-event-agent
+HERMES_WEBHOOK_SECRET=replace-with-route-secret
 ```
 
 预览日报：
@@ -126,6 +130,19 @@ python3 event_agent.py --config config.local.json health-report --dry-run --alwa
 ```
 
 常驻服务出现异常时会自动发送 `fault` payload，并用 `fault_cooldown_minutes` 避免刷屏。
+
+LightVela 或其他 agent 可以通过轻量 HTTP API 查询摘要和运行状态：
+
+```bash
+python3 event_agent.py --config config.local.json api-server
+curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
+  http://127.0.0.1:8791/digest?hours=24
+```
+
+更多说明：
+
+- `integrations/hermes.md`
+- `integrations/lightvela.md`
 
 ## systemd
 

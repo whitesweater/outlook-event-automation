@@ -81,12 +81,23 @@
   "notifications": {
     "enabled": false,
     "provider": "webhook",
+    "notify_target": "hermes-webhook",
     "webhook_url_env": "NOTIFY_WEBHOOK_URL",
     "webhook_token_env": "NOTIFY_WEBHOOK_TOKEN",
+    "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
+    "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
     "webhook_timeout_seconds": 30,
     "daily_digest_hours": 24,
     "daily_digest_limit": 20,
     "fault_cooldown_minutes": 30,
     "health_max_last_run_age_minutes": 120
+  },
+  "api": {
+    "host": "127.0.0.1",
+    "port": 8791,
+    "token_env": "OUTLOOK_AGENT_API_TOKEN",
+    "allow_write_actions": false,
+    "default_hours": 24,
+    "default_limit": 20
   }
 }
