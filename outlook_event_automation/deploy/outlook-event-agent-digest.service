@@ -1,0 +1,14 @@
+[Unit]
+Description=Send Outlook/Gmail event automation daily digest
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/outlook-event-agent
+EnvironmentFile=/opt/outlook-event-agent/.env
+ExecStart=/usr/bin/python3 /opt/outlook-event-agent/event_agent.py --config /opt/outlook-event-agent/config.local.json notify-digest --hours 24
+User=outlook-agent
+Group=outlook-agent
+NoNewPrivileges=true
+PrivateTmp=true

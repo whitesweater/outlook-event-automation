@@ -77,5 +77,16 @@
   "service": {
     "poll_seconds": 30,
     "max_messages_per_poll": 10
+  },
+  "notifications": {
+    "enabled": false,
+    "provider": "webhook",
+    "webhook_url_env": "NOTIFY_WEBHOOK_URL",
+    "webhook_token_env": "NOTIFY_WEBHOOK_TOKEN",
+    "webhook_timeout_seconds": 30,
+    "daily_digest_hours": 24,
+    "daily_digest_limit": 20,
+    "fault_cooldown_minutes": 30,
+    "health_max_last_run_age_minutes": 120
   }
 }

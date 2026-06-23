@@ -23,6 +23,8 @@ cp .env.example .env
 OPENAI_API_KEY=replace-with-openai-compatible-api-key
 MICROSOFT_CLIENT_SECRET=replace-with-client-secret
 MICROSOFT_USER_ID=replace-with-mailbox-upn
+NOTIFY_WEBHOOK_URL=
+NOTIFY_WEBHOOK_TOKEN=
 ```
 
 ## 授权
@@ -81,12 +83,63 @@ python3 event_agent.py --config config.local.json serve --write
 - `dry_run`: 测试模式下的可写候选。
 - `created`: 已写入目标日历。
 
+## OpenClaw / harmess 推送
+
+开启 `config.local.json`：
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "provider": "webhook",
+    "webhook_url_env": "NOTIFY_WEBHOOK_URL",
+    "webhook_token_env": "NOTIFY_WEBHOOK_TOKEN",
+    "daily_digest_hours": 24,
+    "fault_cooldown_minutes": 30
+  }
+}
+```
+
+在 `.env` 中填入 OpenClaw / harmess 的 webhook receiver：
+
+```text
+NOTIFY_WEBHOOK_URL=https://your-openclaw-or-harmess-webhook.example/push
+NOTIFY_WEBHOOK_TOKEN=
+```
+
+预览日报：
+
+```bash
+python3 event_agent.py --config config.local.json notify-digest --hours 24 --dry-run
+```
+
+发送日报：
+
+```bash
+python3 event_agent.py --config config.local.json notify-digest --hours 24
+```
+
+健康报告：
+
+```bash
+python3 event_agent.py --config config.local.json health-report --dry-run --always
+```
+
+常驻服务出现异常时会自动发送 `fault` payload，并用 `fault_cooldown_minutes` 避免刷屏。
+
 ## systemd
 
 ```bash
 sudo APP_DIR=/opt/outlook-event-agent bash scripts/install-systemd.sh
 sudo systemctl start outlook-event-agent
 journalctl -u outlook-event-agent -f
+```
+
+每日 08:30 推送日报：
+
+```bash
+sudo systemctl enable --now outlook-event-agent-digest.timer
+systemctl list-timers outlook-event-agent-digest.timer
 ```
 
 生产环境请确认 `.env`、`config.local.json`、OAuth token、SQLite 数据库和运行日志都只保存在服务器本地，不提交到 Git。

@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,6 +37,7 @@ DEFAULT_CONFIG = BASE_DIR / "config.local.json"
 EXAMPLE_CONFIG = BASE_DIR / "config.example.json"
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "events.sqlite3"
+NOTIFICATION_STATE_PATH = DATA_DIR / "notification_state.json"
 UTC = timezone.utc
 
 MICROSOFT_AUTH_BASE = "https://login.microsoftonline.com"
@@ -181,6 +183,27 @@ def http_json(
         merged_headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, headers=merged_headers, method=method)
     return read_json_response(req, timeout=timeout)
+
+
+def http_post_raw(
+    url: str,
+    *,
+    payload: Any,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[int, str]:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    merged_headers = {"Content-Type": "application/json; charset=utf-8"}
+    merged_headers.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=merged_headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise AgentError(f"HTTP {exc.code} from {url}: {details}") from exc
+    except urllib.error.URLError as exc:
+        raise AgentError(f"Network error from {url}: {exc}") from exc
 
 
 def read_json_response(req: urllib.request.Request, timeout: int = 60) -> dict[str, Any]:
@@ -1282,6 +1305,7 @@ def write_outlook_event(event: dict[str, Any], config: dict[str, Any]) -> dict[s
 def db() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS processed_events (
@@ -1394,6 +1418,317 @@ def record_event(
         ),
     )
     conn.commit()
+
+
+def notification_config(config: dict[str, Any]) -> dict[str, Any]:
+    return config.get("notifications", {}) or {}
+
+
+def notifications_enabled(config: dict[str, Any]) -> bool:
+    return bool(notification_config(config).get("enabled", False))
+
+
+def notification_webhook_url(config: dict[str, Any]) -> str:
+    notify = notification_config(config)
+    env_name = notify.get("webhook_url_env", "NOTIFY_WEBHOOK_URL")
+    return (os.environ.get(env_name, "") or notify.get("webhook_url", "")).strip()
+
+
+def notification_headers(config: dict[str, Any]) -> dict[str, str]:
+    notify = notification_config(config)
+    headers: dict[str, str] = {}
+    token_env = notify.get("webhook_token_env", "NOTIFY_WEBHOOK_TOKEN")
+    token = (os.environ.get(token_env, "") or notify.get("webhook_token", "")).strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def send_notification(
+    config: dict[str, Any],
+    *,
+    event_type: str,
+    title: str,
+    markdown: str,
+    severity: str = "info",
+    payload: dict[str, Any] | None = None,
+    force: bool = False,
+) -> bool:
+    if not force and not notifications_enabled(config):
+        return False
+    notify = notification_config(config)
+    provider = notify.get("provider", "webhook")
+    if provider != "webhook":
+        raise AgentError(f"Unsupported notification provider: {provider}")
+    url = notification_webhook_url(config)
+    if not url:
+        raise AgentError(
+            "Notification webhook URL is missing. Set NOTIFY_WEBHOOK_URL or "
+            "notifications.webhook_url."
+        )
+    envelope = {
+        "source": "outlook_event_automation",
+        "type": event_type,
+        "severity": severity,
+        "title": title,
+        "markdown": markdown,
+        "text": strip_markdown(markdown),
+        "created_at": utc_now().isoformat(),
+        "payload": payload or {},
+    }
+    status, _ = http_post_raw(
+        url,
+        payload=envelope,
+        headers=notification_headers(config),
+        timeout=int(notify.get("webhook_timeout_seconds", 30)),
+    )
+    print(f"Notification sent: type={event_type} status={status}")
+    return True
+
+
+def strip_markdown(value: str) -> str:
+    text = re.sub(r"`([^`]+)`", r"\1", value)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
+    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+    return text.strip()
+
+
+def load_notification_state() -> dict[str, Any]:
+    if not NOTIFICATION_STATE_PATH.exists():
+        return {}
+    try:
+        return load_json(NOTIFICATION_STATE_PATH)
+    except Exception:
+        return {}
+
+
+def save_notification_state(state: dict[str, Any]) -> None:
+    save_json(NOTIFICATION_STATE_PATH, state)
+
+
+def notification_cooldown_elapsed(event_type: str, cooldown_minutes: int) -> bool:
+    if cooldown_minutes <= 0:
+        return True
+    state = load_notification_state()
+    raw = state.get("last_sent", {}).get(event_type, "")
+    if not raw:
+        return True
+    try:
+        last_sent = parse_datetime(raw)
+    except AgentError:
+        return True
+    return utc_now() - last_sent >= timedelta(minutes=cooldown_minutes)
+
+
+def mark_notification_sent(event_type: str) -> None:
+    state = load_notification_state()
+    last_sent = dict(state.get("last_sent", {}))
+    last_sent[event_type] = utc_now().isoformat()
+    state["last_sent"] = last_sent
+    save_notification_state(state)
+
+
+def notify_fault(config: dict[str, Any], message: str, context: dict[str, Any]) -> None:
+    if not notifications_enabled(config):
+        return
+    notify = notification_config(config)
+    cooldown = int(notify.get("fault_cooldown_minutes", 30))
+    if not notification_cooldown_elapsed("fault", cooldown):
+        return
+    markdown = "\n".join(
+        [
+            "## 邮件日历服务故障",
+            "",
+            f"- 时间：`{utc_now().isoformat()}`",
+            f"- 组件：`outlook_event_automation`",
+            f"- 错误：{message}",
+            "",
+            "服务循环会继续保活并在下一轮自动重试。",
+        ]
+    )
+    try:
+        sent = send_notification(
+            config,
+            event_type="fault",
+            title="邮件日历服务故障",
+            markdown=markdown,
+            severity="error",
+            payload={"context": context, "error": message},
+        )
+        if sent:
+            mark_notification_sent("fault")
+    except Exception as exc:
+        print(f"[{utc_now().isoformat()}] ERROR: failed to send fault notification: {exc}", file=sys.stderr)
+
+
+def query_processed_events(hours: int, limit: int) -> list[dict[str, Any]]:
+    since = utc_now() - timedelta(hours=hours)
+    conn = db()
+    rows = conn.execute(
+        """
+        SELECT source, source_email_id, status, sink, remote_event_id, title,
+               start_time, created_at, extraction_json
+        FROM processed_events
+        WHERE created_at >= ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (since.isoformat(), limit),
+    ).fetchall()
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            extraction = json.loads(row["extraction_json"])
+        except Exception:
+            extraction = {}
+        events.append(
+            {
+                "source": row["source"],
+                "source_email_id": row["source_email_id"],
+                "status": row["status"],
+                "sink": row["sink"],
+                "remote_event_id": row["remote_event_id"],
+                "title": row["title"] or extraction.get("title", ""),
+                "start_time": row["start_time"] or extraction.get("start_time", ""),
+                "location": extraction.get("location", ""),
+                "reason": extraction.get("reason", ""),
+                "source_subject": extraction.get("source_subject", ""),
+                "created_at": row["created_at"],
+            }
+        )
+    return events
+
+
+def build_daily_digest(config: dict[str, Any], hours: int, limit: int) -> dict[str, Any]:
+    all_events = query_processed_events(hours, max(limit, 1000))
+    counts = Counter(event["status"] for event in all_events)
+    created = [event for event in all_events if event["status"] == "created"]
+    review = [event for event in all_events if event["status"] == "needs_review"]
+    ignored = [event for event in all_events if event["status"] == "ignored"]
+    lines = [
+        "## 活动邮件同步日报",
+        "",
+        f"- 时间窗：过去 {hours} 小时",
+        f"- 新增日历事件：{len(created)}",
+        f"- 待复核邮件：{len(review)}",
+        f"- 已忽略邮件：{len(ignored)}",
+    ]
+    if created:
+        lines.extend(["", "### 新增活动"])
+        for item in created[:limit]:
+            when = compact_datetime(item.get("start_time", ""))
+            location = item.get("location") or "地点待确认"
+            lines.append(f"- `{when}` {item.get('title', '未命名事件')}｜{location}")
+    else:
+        lines.extend(["", "过去这段时间没有新增可写入日历的活动。"])
+    if review:
+        lines.extend(["", "### 待复核"])
+        for item in review[:5]:
+            subject = item.get("source_subject") or item.get("title") or "未命名邮件"
+            reason = item.get("reason") or "需要人工判断"
+            lines.append(f"- {subject}：{reason}")
+    return {
+        "title": "活动邮件同步日报",
+        "markdown": "\n".join(lines),
+        "payload": {
+            "hours": hours,
+            "counts": dict(counts),
+            "events": all_events[:limit],
+            "total_events": len(all_events),
+        },
+    }
+
+
+def compact_datetime(value: str) -> str:
+    if not value:
+        return "时间待确认"
+    try:
+        parsed = parse_datetime(value)
+    except AgentError:
+        return value
+    return parsed.strftime("%m-%d %H:%M")
+
+
+def notify_digest(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    notify = notification_config(config)
+    hours = args.hours or int(notify.get("daily_digest_hours", 24))
+    limit = args.limit or int(notify.get("daily_digest_limit", 20))
+    digest = build_daily_digest(config, hours, limit)
+    print(digest["markdown"])
+    if args.dry_run:
+        return
+    sent = send_notification(
+        config,
+        event_type="daily_digest",
+        title=digest["title"],
+        markdown=digest["markdown"],
+        severity="info",
+        payload=digest["payload"],
+    )
+    if not sent:
+        print("Notifications are disabled. Set notifications.enabled=true to send.")
+
+
+def build_health_report(config: dict[str, Any], max_age_minutes: int) -> dict[str, Any]:
+    issues: list[str] = []
+    last_run: dict[str, Any] = {}
+    path = DATA_DIR / "last_run.json"
+    if not path.exists():
+        issues.append("没有找到 last_run.json，服务可能还没有成功跑过。")
+    else:
+        try:
+            last_run = load_json(path)
+            ran_at = parse_datetime(str(last_run.get("ran_at", "")))
+            age_minutes = int((utc_now() - ran_at).total_seconds() // 60)
+            if age_minutes > max_age_minutes:
+                issues.append(f"最近一次成功运行距今 {age_minutes} 分钟，超过阈值 {max_age_minutes} 分钟。")
+        except Exception as exc:
+            issues.append(f"无法读取最近运行状态：{exc}")
+    results = last_run.get("results", []) if isinstance(last_run, dict) else []
+    actions = Counter(str(item.get("action", "unknown")) for item in results if isinstance(item, dict))
+    if actions.get("extraction_failed", 0):
+        issues.append(f"最近一次运行有 {actions['extraction_failed']} 封邮件 AI 抽取失败。")
+    severity = "error" if issues else "ok"
+    lines = [
+        "## 邮件日历服务健康报告",
+        "",
+        f"- 时间：`{utc_now().isoformat()}`",
+        f"- 状态：{'异常' if issues else '正常'}",
+        f"- 最近动作统计：{dict(actions)}",
+    ]
+    if issues:
+        lines.extend(["", "### 问题"])
+        lines.extend(f"- {issue}" for issue in issues)
+    else:
+        lines.extend(["", "服务最近一次运行状态正常。"])
+    return {
+        "severity": severity,
+        "title": "邮件日历服务健康报告",
+        "markdown": "\n".join(lines),
+        "payload": {"issues": issues, "actions": dict(actions), "last_run": last_run},
+    }
+
+
+def health_report(args: argparse.Namespace, config: dict[str, Any]) -> None:
+    notify = notification_config(config)
+    max_age = args.max_last_run_age_minutes or int(
+        notify.get("health_max_last_run_age_minutes", 120)
+    )
+    report = build_health_report(config, max_age)
+    print(report["markdown"])
+    should_send = args.always or report["severity"] != "ok"
+    if args.dry_run or not should_send:
+        return
+    sent = send_notification(
+        config,
+        event_type="health_report",
+        title=report["title"],
+        markdown=report["markdown"],
+        severity=report["severity"],
+        payload=report["payload"],
+    )
+    if not sent:
+        print("Notifications are disabled. Set notifications.enabled=true to send.")
 
 
 def run_pipeline(args: argparse.Namespace, config: dict[str, Any]) -> None:
@@ -1521,6 +1856,11 @@ def service_loop(args: argparse.Namespace, config: dict[str, Any]) -> None:
             run_pipeline(run_args, config)
         except Exception as exc:  # Keep the daemon alive across transient API failures.
             print(f"[{utc_now().isoformat()}] ERROR: {exc}", file=sys.stderr)
+            notify_fault(
+                config,
+                str(exc),
+                {"source": source, "sink": sink, "limit": limit, "interval": interval},
+            )
         elapsed = (utc_now() - started).total_seconds()
         sleep_for = max(1, interval - int(elapsed))
         time.sleep(sleep_for)
@@ -1578,6 +1918,16 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--write", action="store_true", help="Required: create calendar events")
     serve.add_argument("--batch-size", type=int, help="Messages per AI extraction batch")
 
+    digest = sub.add_parser("notify-digest", help="Send or preview a daily activity digest")
+    digest.add_argument("--hours", type=int, help="Lookback window in hours")
+    digest.add_argument("--limit", type=int, help="Maximum processed rows to include")
+    digest.add_argument("--dry-run", action="store_true", help="Print without sending webhook")
+
+    health = sub.add_parser("health-report", help="Send or preview a service health report")
+    health.add_argument("--max-last-run-age-minutes", type=int, help="Staleness threshold")
+    health.add_argument("--always", action="store_true", help="Send even when healthy")
+    health.add_argument("--dry-run", action="store_true", help="Print without sending webhook")
+
     sub.add_parser("show-config", help="Print the effective config")
     return parser
 
@@ -1602,6 +1952,10 @@ def main() -> int:
             run_pipeline(args, config)
         elif args.command == "serve":
             service_loop(args, config)
+        elif args.command == "notify-digest":
+            notify_digest(args, config)
+        elif args.command == "health-report":
+            health_report(args, config)
         elif args.command == "show-config":
             print(json.dumps(config, ensure_ascii=False, indent=2))
         else:

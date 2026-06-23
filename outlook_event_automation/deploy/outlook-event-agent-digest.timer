@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Outlook/Gmail event automation daily digest
+
+[Timer]
+OnCalendar=*-*-* 08:30:00
+Persistent=true
+Unit=outlook-event-agent-digest.service
+
+[Install]
+WantedBy=timers.target

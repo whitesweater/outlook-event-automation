@@ -42,6 +42,7 @@ flowchart LR
 - 守护规则：`Daily Event Alert` 直接忽略；取消、撤回、多活动或缺时间强制复核。
 - 去重审计：SQLite 记录 source message id、dedupe key、处理状态和远端 event id。
 - 常驻运行：`serve --write` 可由 systemd 托管，适合部署在小型服务器上。
+- 自动推送：通过通用 webhook 产出日报和故障告警，OpenClaw、harmess 或其他 IM 桥接层可以继续转发到飞书、QQ、微信。
 
 ## 目录结构
 
@@ -83,6 +84,8 @@ cp .env.example .env
 OPENAI_API_KEY=replace-with-openai-compatible-api-key
 MICROSOFT_CLIENT_SECRET=replace-with-client-secret
 MICROSOFT_USER_ID=replace-with-mailbox-upn
+NOTIFY_WEBHOOK_URL=
+NOTIFY_WEBHOOK_TOKEN=
 ```
 
 授权 Microsoft：
@@ -138,6 +141,78 @@ journalctl -u outlook-event-agent -f
 python3 /opt/outlook-event-agent/event_agent.py \
   --config /opt/outlook-event-agent/config.local.json serve --write
 ```
+
+## OpenClaw / harmess 推送集成
+
+这个组件不直接绑定某一个 IM 平台，而是发送标准 webhook payload。推荐架构是：
+
+```mermaid
+flowchart LR
+  A["邮件日历服务"] -->|"daily_digest / fault / health_report"| B["Webhook Receiver"]
+  B --> C["OpenClaw / harmess"]
+  C --> D["飞书 / QQ / 微信"]
+```
+
+开启方式：
+
+1. 在 `config.local.json` 里设置：
+
+```json
+{
+  "notifications": {
+    "enabled": true,
+    "provider": "webhook",
+    "webhook_url_env": "NOTIFY_WEBHOOK_URL",
+    "webhook_token_env": "NOTIFY_WEBHOOK_TOKEN",
+    "daily_digest_hours": 24,
+    "fault_cooldown_minutes": 30
+  }
+}
+```
+
+2. 在 `.env` 里设置 OpenClaw / harmess 的 webhook receiver：
+
+```text
+NOTIFY_WEBHOOK_URL=https://your-openclaw-or-harmess-webhook.example/push
+NOTIFY_WEBHOOK_TOKEN=
+```
+
+3. 预览日报：
+
+```bash
+python3 event_agent.py --config config.local.json notify-digest --hours 24 --dry-run
+```
+
+4. 发送日报：
+
+```bash
+python3 event_agent.py --config config.local.json notify-digest --hours 24
+```
+
+5. 预览健康报告：
+
+```bash
+python3 event_agent.py --config config.local.json health-report --dry-run --always
+```
+
+6. 服务器上启用每日定时推送：
+
+```bash
+sudo systemctl enable --now outlook-event-agent-digest.timer
+systemctl list-timers outlook-event-agent-digest.timer
+```
+
+webhook payload 统一包含：
+
+- `source`: 固定为 `outlook_event_automation`
+- `type`: `daily_digest`、`fault` 或 `health_report`
+- `severity`: `info`、`ok` 或 `error`
+- `title`: 消息标题
+- `markdown`: 适合 IM 展示的 Markdown 文本
+- `text`: 去掉简单 Markdown 后的纯文本
+- `payload`: 结构化事件、统计或故障上下文
+
+服务常驻运行时，如果邮件读取、AI 抽取或日历写入抛出异常，会发送 `fault` 告警；`fault_cooldown_minutes` 用来避免同一个故障刷屏。
 
 ## 状态语义
 
