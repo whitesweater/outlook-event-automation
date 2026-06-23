@@ -1,0 +1,9 @@
+{
+  "source": "fixture",
+  "message_id": "sample-001",
+  "subject": "Seminar: AI for Smart Cities",
+  "sender": "events@example.edu",
+  "received_at": "2026-06-20T10:00:00+08:00",
+  "web_link": "https://example.edu/events/ai-smart-cities",
+  "body_text": "Dear students,\n\nYou are invited to our upcoming seminar.\n\nStart: 2026-07-02T15:00:00+08:00\nEnd: 2026-07-02T16:30:00+08:00\nLocation: Room E2-301, Campus Conference Center\nOrganizer: School Events Office\n\nPlease RSVP before June 28.\n\nBest,\nEvents Office"
+}

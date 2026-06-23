@@ -1,0 +1,22 @@
+# Local secrets and machine-specific config
+.env
+.env.*
+!outlook_event_automation/.env.example
+outlook_event_automation/config.local.json
+
+# Runtime state
+outlook_event_automation/data/*
+!outlook_event_automation/data/.gitkeep
+
+# Local Codex/session notes
+LOCAL_PROJECT_CONTEXT.md
+CODEX_SESSION_HISTORY.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Tooling and OS noise
+.DS_Store
+Thumbs.db

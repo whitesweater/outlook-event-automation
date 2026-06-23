@@ -1,0 +1,19 @@
+[Unit]
+Description=Outlook/Gmail forwarded event extraction agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/outlook-event-agent
+EnvironmentFile=/opt/outlook-event-agent/.env
+ExecStart=/usr/bin/python3 /opt/outlook-event-agent/event_agent.py --config /opt/outlook-event-agent/config.local.json serve --write
+Restart=always
+RestartSec=10
+User=outlook-agent
+Group=outlook-agent
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,81 @@
+{
+  "source": "outlook",
+  "microsoft": {
+    "tenant": "organizations",
+    "auth_mode": "device_code",
+    "client_id": "PASTE_MICROSOFT_APP_CLIENT_ID",
+    "user_id": "PASTE_OUTLOOK_MAILBOX_UPN",
+    "redirect_port": 5000,
+    "redirect_path": "/getAToken",
+    "redirect_uri": "http://localhost:5000/getAToken",
+    "scopes": [
+      "offline_access",
+      "Mail.Read"
+    ],
+    "token_file": "data/microsoft_token.json",
+    "mail_folder": "inbox",
+    "message_limit": 25,
+    "lookback_days": 30,
+    "calendar_id": "",
+    "calendar_timezone": "China Standard Time"
+  },
+  "google": {
+    "client_id": "PASTE_GOOGLE_OAUTH_CLIENT_ID",
+    "client_secret": "",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/calendar.events"
+    ],
+    "token_file": "data/google_token.json",
+    "calendar_id": "primary",
+    "redirect_port": 8765,
+    "send_updates": "none"
+  },
+  "gmail": {
+    "query": "newer_than:7d -in:spam -in:trash",
+    "label_ids": [
+      "INBOX"
+    ],
+    "message_limit": 25
+  },
+  "extraction": {
+    "mode": "openai",
+    "openai_model": "gpt-5.5",
+    "openai_timeout_seconds": 90,
+    "openai_max_retries": 3,
+    "openai_retry_seconds": 2,
+    "batch_size": 20,
+    "batch_body_limit": 6000,
+    "default_timezone": "Asia/Shanghai",
+    "confidence_threshold": 0.75,
+    "event_keywords": [
+      "event",
+      "seminar",
+      "talk",
+      "lecture",
+      "workshop",
+      "conference",
+      "webinar",
+      "rsvp",
+      "registration",
+      "activity",
+      "活动",
+      "讲座",
+      "研讨会",
+      "报名",
+      "会议",
+      "工作坊",
+      "论坛"
+    ]
+  },
+  "calendar": {
+    "sink": "google",
+    "reminder_minutes": 30,
+    "include_source_email_body": true,
+    "source_body_limit": 12000
+  },
+  "service": {
+    "poll_seconds": 30,
+    "max_messages_per_poll": 10
+  }
+}
