@@ -86,7 +86,7 @@ python3 event_agent.py --config config.local.json serve --write
 - `dry_run`: 测试模式下的可写候选。
 - `created`: 已写入目标日历。
 
-## Hermes / LightVela 集成
+## 自托管 Hermes 集成
 
 开启 `config.local.json`：
 
@@ -131,7 +131,7 @@ python3 event_agent.py --config config.local.json health-report --dry-run --alwa
 
 常驻服务出现异常时会自动发送 `fault` payload，并用 `fault_cooldown_minutes` 避免刷屏。
 
-LightVela 或其他 agent 可以通过轻量 HTTP API 查询摘要和运行状态：
+Hermes 或其他 agent 可以通过轻量 HTTP API 查询摘要和运行状态：
 
 ```bash
 python3 event_agent.py --config config.local.json api-server
@@ -143,11 +143,31 @@ curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
   'http://127.0.0.1:8791/agenda-range?date=today&days=7&limit=100'
 ```
 
+用户确认后新增 Outlook 日程：
+
+```bash
+curl -X POST -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  http://127.0.0.1:8791/calendar-events \
+  -d '{
+    "confirmed": true,
+    "title": "字节跳动面试",
+    "start_time": "2026-06-25T11:00:00+08:00",
+    "end_time": "2026-06-25T12:00:00+08:00",
+    "timezone": "Asia/Shanghai",
+    "description": "通过 Hermes 手动添加。"
+  }'
+```
+
+真实写入要求 `api.allow_write_actions=true`。可以先加 `"dry_run": true`
+验证解析结果；dry run 不写日历，也不要求开启写入开关。
+
 日程查询走 Microsoft Graph Calendar，需要 Microsoft delegated scopes 至少包含
 `Calendars.Read` 或 `Calendars.ReadWrite`。如果要让 Hermes 每天固定推送当天日程，
 推荐使用 Hermes Cron 的 `--no-agent --script` 模式：脚本调用 `/agenda`，
 Hermes 负责定时和投递。如果要让 Hermes Agent 回答“最近三天”或“最近一周”的
 问题，给 Hermes 配置 `outlook-mail-events` skill，并让 skill 调用 `/agenda-range`。
+如果要支持“添加日程”，同一个 skill 可以在用户确认后调用 `/calendar-events`。
 
 更多说明：
 

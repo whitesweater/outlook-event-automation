@@ -33,6 +33,7 @@ This AGENTS.md scopes guidance to `outlook_event_automation`. Parent AGENTS guid
 - Microsoft delegated scopes for Outlook calendar reads need `Calendars.Read` or `Calendars.ReadWrite`; mail scanning needs `Mail.Read`.
 - `Daily Event Alert` is intentionally ignored. Cancellation, recall, multi-event summaries, missing times, and low-confidence extraction should stay review-oriented rather than auto-created.
 - Calendar event bodies should retain source traceability: original subject, sender, received time, source link when available, and original mail body when configured.
+- Manual calendar writes through the HTTP API must remain gated by `api.allow_write_actions=true` and request-body `confirmed=true`.
 - For API changes, update `README.md` and relevant `integrations/*.md`. Hermes-facing behavior should be documented in `integrations/hermes.md`.
 - Minimum verification for code edits: `python3 -m py_compile event_agent.py`. For calendar/API work, also test the relevant CLI/API path when credentials are available.
 <!-- OMX:AGENTS-INIT:MANUAL:END -->

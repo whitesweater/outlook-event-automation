@@ -92,7 +92,7 @@ Authorization: Bearer <token>
 
 `POST /scan` 默认不写日历。只有同时满足下面两个条件才允许外部触发真实写入：
 
-- 请求里带 `write=true`
+- 请求参数带 `write=true`
 - `config.local.json` 里设置 `"allow_write_actions": true`
 
-生产环境建议保持 `allow_write_actions: false`，让日历写入只由本项目常驻服务负责。
+生产环境建议保持 `allow_write_actions: false`，让日历写入只由本项目常驻服务或自托管 Hermes 确认流程负责。

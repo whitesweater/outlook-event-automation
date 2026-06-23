@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="/opt/hermes-agent/home/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+BASE="${OUTLOOK_AGENT_API_BASE:-http://127.0.0.1:8791}"
+TOKEN="${OUTLOOK_AGENT_API_TOKEN:-}"
+if [[ -z "$TOKEN" ]]; then
+  echo '{"error":"OUTLOOK_AGENT_API_TOKEN missing in Hermes env"}' >&2
+  exit 2
+fi
+
+endpoint="${1:-digest}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$endpoint" in
+  agenda)
+    date_value="${1:-today}"
+    limit="${2:-50}"
+    path="/agenda?date=${date_value}&limit=${limit}"
+    ;;
+  agenda-range)
+    days="${1:-7}"
+    date_value="${2:-today}"
+    limit="${3:-100}"
+    path="/agenda-range?date=${date_value}&days=${days}&limit=${limit}"
+    ;;
+  digest)
+    hours="${1:-24}"
+    limit="${2:-20}"
+    path="/digest?hours=${hours}&limit=${limit}"
+    ;;
+  health)
+    path="/health"
+    ;;
+  events)
+    status="${1:-created}"
+    hours="${2:-24}"
+    limit="${3:-20}"
+    path="/events?status=${status}&hours=${hours}&limit=${limit}"
+    ;;
+  review)
+    hours="${1:-24}"
+    limit="${2:-20}"
+    path="/review?hours=${hours}&limit=${limit}"
+    ;;
+  last-run)
+    path="/last-run"
+    ;;
+  create-event-json)
+    curl -sS -X POST \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      --data-binary @- \
+      "${BASE}/calendar-events"
+    exit 0
+    ;;
+  *)
+    echo "Usage: outlook-mail-events [agenda [today|tomorrow|YYYY-MM-DD limit]|agenda-range [days date limit]|digest [hours limit]|health|events [status hours limit]|review [hours limit]|last-run|create-event-json]" >&2
+    exit 64
+    ;;
+esac
+
+curl -sS -H "Authorization: Bearer ${TOKEN}" "${BASE}${path}"

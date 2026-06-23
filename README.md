@@ -43,7 +43,7 @@ flowchart LR
 - 去重审计：SQLite 记录 source message id、dedupe key、处理状态和远端 event id。
 - 常驻运行：`serve --write` 可由 systemd 托管，适合部署在小型服务器上。
 - 自动推送：通过 Hermes-compatible webhook 产出日报和故障告警，由自托管 Hermes 转发到微信、QQ、飞书。
-- Agent 查询：提供轻量 HTTP API，方便 LightVela、Hermes skill 或其他 agent 交互式读取活动摘要与运行状态。
+- Agent 查询：提供轻量 HTTP API，方便 Hermes skill 或其他 agent 交互式读取活动摘要与运行状态。
 
 ## 目录结构
 
@@ -152,12 +152,9 @@ python3 /opt/outlook-event-agent/event_agent.py \
   --config /opt/outlook-event-agent/config.local.json serve --write
 ```
 
-## Hermes / LightVela 集成
+## 自托管 Hermes 集成
 
-这个组件不直接绑定某一个 IM 平台。现在推荐两条路：
-
-- 自托管 Hermes：本服务主动发送 Hermes webhook，Hermes 负责转发到 `weixin`、`qqbot` 或 `feishu`。
-- LightVela：公开文档没有暴露 raw webhook route，更适合作为对话入口，通过 SkillHub 技能访问本项目的 HTTP API。
+这个组件不直接绑定某一个 IM 平台。当前生产路径使用自托管 Hermes：本服务主动发送 Hermes webhook，Hermes 负责转发到 `weixin`、`qqbot` 或 `feishu`，并通过 `outlook-mail-events` skill 查询和新增 Outlook 日程。
 
 推荐自托管 Hermes 架构：
 
@@ -229,7 +226,7 @@ webhook payload 统一包含：
 
 服务常驻运行时，如果邮件读取、AI 抽取或日历写入抛出异常，会发送 `fault` 告警；`fault_cooldown_minutes` 用来避免同一个故障刷屏。
 
-Hermes / LightVela 或其他 agent 查询 API：
+Hermes 或其他 agent 查询 API：
 
 ```bash
 python3 event_agent.py --config config.local.json api-server
@@ -238,6 +235,10 @@ curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
 curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
   'http://127.0.0.1:8791/agenda-range?date=today&days=7&limit=100'
 ```
+
+如果要让 Hermes 在用户确认后新增 Outlook 日程，需要在服务器配置中开启
+`api.allow_write_actions=true`，然后让 Hermes skill 调用 `POST /calendar-events`。
+该接口仍要求请求体包含 `confirmed: true`，避免模型误触发写入。
 
 更多配置见：
 

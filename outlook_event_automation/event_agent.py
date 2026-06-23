@@ -1553,6 +1553,86 @@ def build_outlook_agenda_range(
     }
 
 
+def manual_event_from_payload(payload: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    timezone_name = str(
+        payload.get("timezone")
+        or config.get("extraction", {}).get("default_timezone", "Asia/Shanghai")
+    ).strip()
+    title = str(payload.get("title") or payload.get("summary") or "").strip()
+    start_raw = str(payload.get("start_time") or payload.get("start") or "").strip()
+    end_raw = str(payload.get("end_time") or payload.get("end") or "").strip()
+    if not title:
+        raise AgentError("Manual calendar event needs a non-empty title.")
+    if not start_raw:
+        raise AgentError("Manual calendar event needs start_time.")
+    if not end_raw:
+        end_raw = default_end_time(start_raw)
+    if not end_raw:
+        raise AgentError("Manual calendar event needs end_time.")
+    start = parse_datetime(start_raw, timezone_name)
+    end = parse_datetime(end_raw, timezone_name)
+    if end <= start:
+        raise AgentError("Manual calendar event end_time must be after start_time.")
+    location = str(payload.get("location") or "").strip()
+    description = str(payload.get("description") or "通过 Hermes/Agent 手动添加。").strip()
+    organizer = str(payload.get("organizer") or "manual").strip()
+    dedupe_raw = "\n".join([title, start.isoformat(), end.isoformat(), location])
+    dedupe_key = str(payload.get("dedupe_key") or f"manual:{hashlib.sha256(dedupe_raw.encode('utf-8')).hexdigest()}").strip()
+    source_email_id = str(payload.get("source_email_id") or dedupe_key).strip()
+    return {
+        "is_event": True,
+        "confidence": 1.0,
+        "title": title,
+        "start_time": start.isoformat(),
+        "end_time": end.isoformat(),
+        "timezone": timezone_name,
+        "location": location,
+        "description": description,
+        "organizer": organizer,
+        "requires_review": False,
+        "reason": "用户已确认的手动日程。",
+        "source": "manual",
+        "source_email_id": source_email_id,
+        "source_subject": title,
+        "source_sender": organizer,
+        "source_received_at": utc_now().isoformat(),
+        "source_web_link": "",
+        "source_body_text": str(payload.get("source_body_text") or "").strip(),
+        "dedupe_key": dedupe_key,
+    }
+
+
+def create_manual_calendar_event(
+    config: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    sink = str(payload.get("sink") or "outlook").strip().lower()
+    if sink != "outlook":
+        raise AgentError("Manual calendar event API currently supports sink='outlook' only.")
+    event = manual_event_from_payload(payload, config)
+    result: dict[str, Any] = {
+        "ok": True,
+        "action": "dry_run" if dry_run else "created",
+        "sink": sink,
+        "event": event,
+    }
+    if dry_run:
+        result["message"] = "Validated calendar event; no Outlook event was created."
+        return result
+    remote = write_event(event, config, sink)
+    remote_id = remote.get("id") or remote.get("iCalUId") or ""
+    conn = db()
+    try:
+        record_event(conn, event, sink, "created", remote_id)
+    finally:
+        conn.close()
+    result["remote_event_id"] = remote_id
+    result["remote_event_link"] = remote.get("htmlLink") or remote.get("webLink") or ""
+    return result
+
+
 def db() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -2119,6 +2199,36 @@ def query_bool(values: dict[str, str], key: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def payload_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def read_api_json_body(handler: http.server.BaseHTTPRequestHandler, max_bytes: int = 65536) -> dict[str, Any]:
+    raw_length = handler.headers.get("Content-Length", "0").strip() or "0"
+    try:
+        length = int(raw_length)
+    except ValueError as exc:
+        raise AgentError("Invalid Content-Length header.") from exc
+    if length <= 0:
+        return {}
+    if length > max_bytes:
+        raise AgentError(f"JSON body is too large; max {max_bytes} bytes.")
+    raw = handler.rfile.read(length)
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise AgentError("Expected a JSON request body.") from exc
+    if not isinstance(value, dict):
+        raise AgentError("Expected a JSON object request body.")
+    return value
+
+
 def json_response(handler: http.server.BaseHTTPRequestHandler, status: int, payload: Any) -> None:
     body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     handler.send_response(status)
@@ -2159,6 +2269,7 @@ def api_routes() -> dict[str, Any]:
             "GET /review?hours=24&limit=20": "needs_review events",
             "GET /last-run": "Last pipeline run result",
             "POST /scan?source=outlook&limit=20": "Run a dry scan; write=true requires api.allow_write_actions=true",
+            "POST /calendar-events": "Create a confirmed manual Outlook Calendar event; requires api.allow_write_actions=true",
         },
     }
 
@@ -2210,10 +2321,33 @@ def handle_api_get(path: str, query: dict[str, str], config: dict[str, Any]) -> 
     return 404, {"error": "not_found", "routes": api_routes()["routes"]}
 
 
-def handle_api_post(path: str, query: dict[str, str], config: dict[str, Any]) -> tuple[int, Any]:
+def handle_api_post(
+    path: str,
+    query: dict[str, str],
+    config: dict[str, Any],
+    body: dict[str, Any] | None = None,
+) -> tuple[int, Any]:
+    body = body or {}
+    api = api_config(config)
+    if path == "/calendar-events":
+        dry_run = query_bool(query, "dry_run", payload_bool(body.get("dry_run"), False))
+        if not dry_run and not bool(api.get("allow_write_actions", False)):
+            return 403, {
+                "error": "write_not_allowed",
+                "message": "Set api.allow_write_actions=true before using POST /calendar-events.",
+            }
+        if not dry_run and not payload_bool(body.get("confirmed"), False):
+            return 400, {
+                "error": "confirmation_required",
+                "message": "Set confirmed=true after the user explicitly confirms the title, date, time, timezone, and calendar.",
+            }
+        try:
+            status = 200 if dry_run else 201
+            return status, create_manual_calendar_event(config, body, dry_run=dry_run)
+        except AgentError as exc:
+            return 400, {"error": "invalid_calendar_event", "message": str(exc)}
     if path != "/scan":
         return 404, {"error": "not_found", "routes": api_routes()["routes"]}
-    api = api_config(config)
     write = query_bool(query, "write", False)
     if write and not bool(api.get("allow_write_actions", False)):
         return 403, {
@@ -2274,8 +2408,11 @@ def api_server(args: argparse.Namespace, config: dict[str, Any]) -> None:
                 if method == "GET":
                     status, payload = handle_api_get(path, query, config)
                 else:
-                    status, payload = handle_api_post(path, query, config)
+                    body = read_api_json_body(self)
+                    status, payload = handle_api_post(path, query, config, body)
                 json_response(self, status, payload)
+            except AgentError as exc:
+                json_response(self, 400, {"error": "bad_request", "message": str(exc)})
             except Exception as exc:
                 json_response(self, 500, {"error": "internal_error", "message": str(exc)})
 

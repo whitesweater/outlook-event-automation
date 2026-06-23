@@ -1,8 +1,6 @@
 # Hermes 自托管集成与维护手册
 
-本文说明如何把 Outlook Event Automation 接入自托管 Hermes，让微信、QQ、飞书等 IM 渠道可以收到日报、故障告警，并通过 Hermes Agent 交互式查询 Outlook 日程。
-
-LightVela 是托管 Hermes，适合作为对话入口；公开文档目前没有提供用户可直接配置的 raw webhook route。需要主动推送时，推荐在自己的服务器上部署 Hermes Gateway。
+本文说明如何把 Outlook Event Automation 接入自托管 Hermes，让微信、QQ、飞书等 IM 渠道可以收到日报、故障告警，并通过 Hermes Agent 交互式查询和新增 Outlook 日程。
 
 参考资料：
 
@@ -237,9 +235,9 @@ sudo -u outlook-agent python3 event_agent.py \
   --notify-target hermes-webhook
 ```
 
-## 5. 配置 Hermes Skill 查询日程
+## 5. 配置 Hermes Skill 查询与新增日程
 
-Hermes Agent 需要一个只读 helper 来访问本项目 API。helper 放在 Hermes home，不放在 Hermes 源码目录。
+Hermes Agent 需要一个 helper 来访问本项目 API。helper 放在 Hermes home，不放在 Hermes 源码目录。查询命令是只读的；新增日程必须走 `create-event-json`，并且 API 请求体要包含 `confirmed: true`。
 
 `/opt/hermes-agent/home/bin/outlook-mail-events`：
 
@@ -301,8 +299,16 @@ case "$endpoint" in
   last-run)
     path="/last-run"
     ;;
+  create-event-json)
+    curl -sS -X POST \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      --data-binary @- \
+      "${BASE}/calendar-events"
+    exit 0
+    ;;
   *)
-    echo "Usage: outlook-mail-events [agenda [today|tomorrow|YYYY-MM-DD limit]|agenda-range [days date limit]|digest [hours limit]|health|events [status hours limit]|review [hours limit]|last-run]" >&2
+    echo "Usage: outlook-mail-events [agenda [today|tomorrow|YYYY-MM-DD limit]|agenda-range [days date limit]|digest [hours limit]|health|events [status hours limit]|review [hours limit]|last-run|create-event-json]" >&2
     exit 64
     ;;
 esac
@@ -322,12 +328,12 @@ sudo install -o ubuntu -g ubuntu -m 0700 outlook-mail-events \
 ```markdown
 ---
 name: outlook-mail-events
-description: Query the Outlook Event Automation service for Outlook Calendar agenda, multi-day agenda ranges, mail-derived calendar events, pending reviews, digests, health, and recent run status.
+description: Query the Outlook Event Automation service for Outlook Calendar agenda, multi-day agenda ranges, mail-derived calendar events, pending reviews, digests, health, recent run status, and create confirmed manual Outlook Calendar events.
 ---
 
 # Outlook Mail And Calendar Queries
 
-Use this skill when the user asks about today's schedule, tomorrow's schedule, the next few days, the next week, recent mail-derived events, pending review emails, calendar sync health, or whether the mail automation is working.
+Use this skill when the user asks about today's schedule, tomorrow's schedule, the next few days, the next week, recent mail-derived events, pending review emails, calendar sync health, whether the mail automation is working, or adding a clearly confirmed Outlook Calendar event.
 
 The local helper is:
 `/opt/hermes-agent/home/bin/outlook-mail-events`
@@ -343,10 +349,29 @@ Commands:
 - `/opt/hermes-agent/home/bin/outlook-mail-events events created 24 20` for created calendar events.
 - `/opt/hermes-agent/home/bin/outlook-mail-events health` for service health.
 - `/opt/hermes-agent/home/bin/outlook-mail-events last-run` for last scan details.
+- `cat event.json | /opt/hermes-agent/home/bin/outlook-mail-events create-event-json` to create a confirmed Outlook Calendar event.
 
 Read the JSON, then answer in Chinese by default. Prefer the `markdown` field when it exists. For questions like “最近三天有什么日程” or “最近一周有哪些安排”, call `agenda-range` with `3` or `7` days. Do not expose `OUTLOOK_AGENT_API_TOKEN`, webhook secrets, raw `.env` contents, or full email bodies unless the user explicitly asks for source detail.
 
-If the user asks to create or update calendar events manually, do not do that through this skill. This skill is read-only.
+For adding a calendar event:
+
+1. Resolve relative dates in `Asia/Shanghai` and state the exact date and time back to the user.
+2. Ask for confirmation unless the user's latest message already explicitly confirms the exact title, date, time, timezone, and Outlook Calendar target.
+3. After confirmation, call `create-event-json` with JSON like:
+
+```json
+{
+  "confirmed": true,
+  "title": "字节跳动面试",
+  "start_time": "2026-06-25T11:00:00+08:00",
+  "end_time": "2026-06-25T12:00:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "location": "",
+  "description": "通过 Hermes 手动添加。"
+}
+```
+
+For validation without writing, include `"dry_run": true`. Do not create events if the date, time, or title is ambiguous. This skill can add confirmed events, but it does not update or delete existing events.
 ```
 
 验证 helper：
@@ -355,6 +380,17 @@ If the user asks to create or update calendar events manually, do not do that th
 sudo -u ubuntu /opt/hermes-agent/home/bin/outlook-mail-events agenda today 50
 sudo -u ubuntu /opt/hermes-agent/home/bin/outlook-mail-events agenda-range 7 today 100
 sudo -u ubuntu /opt/hermes-agent/home/bin/outlook-mail-events health
+cat <<'JSON' | sudo -u ubuntu /opt/hermes-agent/home/bin/outlook-mail-events create-event-json
+{
+  "dry_run": true,
+  "confirmed": true,
+  "title": "字节跳动面试",
+  "start_time": "2026-06-25T11:00:00+08:00",
+  "end_time": "2026-06-25T12:00:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "description": "通过 Hermes 手动添加。"
+}
+JSON
 ```
 
 验证 Hermes Agent 能调用技能：
@@ -501,6 +537,6 @@ Microsoft Graph 可能返回 `2026-06-24T15:40:00.0000000` 这类 7 位小数秒
 
 - 密钥只放 `.env`，不要写进 Git、README、Hermes skill 或脚本。
 - Hermes 源码目录只作为上游程序使用；项目适配放在 Hermes home 的 `config.yaml`、`skills/`、`scripts/`、`bin/`。
-- 本项目 HTTP API 默认只读，`allow_write_actions` 生产环境保持 `false`。
-- 交互式查询用 `/agenda`、`/agenda-range`、`/digest`、`/review`、`/health`，真实写日历由常驻服务负责。
-- 改动后至少验证：`python3 -m py_compile event_agent.py`、API `/health`、helper `agenda-range`、Hermes skill 查询。
+- 本项目 HTTP API 默认只读。只有确实要让 Hermes 管理日程时才开启 `allow_write_actions=true`，并保留 `confirmed: true` 确认流程。
+- 交互式查询用 `/agenda`、`/agenda-range`、`/digest`、`/review`、`/health`；新增用户确认过的日程用 `/calendar-events`。
+- 改动后至少验证：`python3 -m py_compile event_agent.py`、API `/health`、helper `agenda-range`、`create-event-json` dry run、Hermes skill 查询。
