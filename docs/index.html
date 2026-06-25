@@ -3,25 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Outlook Event Automation | 邮件活动自动入日程</title>
-  <meta name="description" content="一个把 Outlook/Gmail 活动邮件自动抽取为日历事件的常驻服务，面向用户解释使用方式，也面向开发者解释技术实现。">
+  <title>Outlook / Gmail Event Agent | 水豚噜噜值班台</title>
+  <meta name="description" content="一个把 Outlook 和 Gmail 活动邮件自动抽取为可信日历事件的常驻服务主页。">
+  <link rel="preload" href="assets/lulu-hero.png" as="image">
   <style>
     :root {
-      color-scheme: light;
-      --paper: #f6f8fb;
-      --paper-2: #ffffff;
-      --ink: #15191e;
-      --muted: #65706f;
-      --line: #d9e1ea;
-      --white: #ffffff;
-      --blue: #2156c8;
-      --teal: #08756f;
-      --green: #247447;
-      --amber: #b36b00;
-      --coral: #bf3f2f;
-      --violet: #5f4bb6;
-      --shadow: 0 24px 70px rgba(21, 25, 30, 0.13);
-      --soft: 0 12px 35px rgba(21, 25, 30, 0.08);
+      color-scheme: light dark;
+      --page: #fff7db;
+      --page-soft: #fffdf2;
+      --surface: rgba(255, 252, 238, 0.82);
+      --surface-strong: #fffef7;
+      --ink: #2d2417;
+      --muted: #776a58;
+      --line: rgba(169, 119, 45, 0.22);
+      --accent: #ef8a20;
+      --accent-2: #f5bd38;
+      --pond: #bfe5d9;
+      --code: #231a12;
+      --code-text: #fff3cd;
+      --radius: 16px;
+      --shadow: 0 24px 70px rgba(91, 61, 20, 0.16);
+      --soft-shadow: 0 12px 34px rgba(91, 61, 20, 0.10);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #17120c;
+        --page-soft: #20180f;
+        --surface: rgba(41, 31, 19, 0.82);
+        --surface-strong: #2a2014;
+        --ink: #fff1cf;
+        --muted: #d4c3a2;
+        --line: rgba(245, 189, 56, 0.24);
+        --accent: #ff9a2c;
+        --accent-2: #ffd36a;
+        --pond: #315b51;
+        --code: #100c08;
+        --code-text: #ffe9af;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+        --soft-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+      }
     }
 
     * {
@@ -34,14 +55,14 @@
 
     body {
       margin: 0;
+      min-width: 320px;
       background:
-        radial-gradient(circle at 9% 0%, rgba(33, 86, 200, 0.12), transparent 27rem),
-        radial-gradient(circle at 82% 12%, rgba(8, 117, 111, 0.12), transparent 26rem),
-        radial-gradient(circle at 74% 42%, rgba(191, 63, 47, 0.10), transparent 21rem),
-        var(--paper);
+        radial-gradient(circle at 78% 16%, rgba(239, 138, 32, 0.18), transparent 24rem),
+        radial-gradient(circle at 18% 34%, rgba(191, 229, 217, 0.66), transparent 30rem),
+        linear-gradient(180deg, var(--page), var(--page-soft) 48%, var(--page));
       color: var(--ink);
-      font-family: Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.65;
+      font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.66;
       letter-spacing: 0;
     }
 
@@ -57,14 +78,15 @@
     .nav {
       position: sticky;
       top: 0;
-      z-index: 50;
+      z-index: 20;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 22px;
-      padding: 16px clamp(18px, 4vw, 72px);
-      background: rgba(246, 248, 251, 0.86);
-      border-bottom: 1px solid rgba(217, 225, 234, 0.82);
+      min-height: 64px;
+      padding: 12px clamp(18px, 4vw, 72px);
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--page-soft) 86%, transparent);
       backdrop-filter: blur(18px);
     }
 
@@ -73,479 +95,352 @@
       align-items: center;
       gap: 10px;
       min-width: max-content;
-      font-weight: 800;
+      font-weight: 900;
     }
 
-    .mark {
+    .brand img {
       width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      display: grid;
-      place-items: center;
-      background: var(--ink);
-      color: var(--paper-2);
-      font-size: 14px;
-      box-shadow: var(--soft);
+      height: 40px;
+      object-fit: contain;
+      filter: drop-shadow(0 6px 10px rgba(91, 61, 20, 0.16));
     }
 
     .links {
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 18px;
+      gap: 16px;
       flex-wrap: wrap;
+      font-size: 14px;
+      font-weight: 820;
     }
 
     .links a {
-      color: #3f4948;
+      color: var(--muted);
       text-decoration: none;
-      font-size: 14px;
-      font-weight: 720;
     }
 
     .links a:hover {
-      color: var(--blue);
+      color: var(--accent);
     }
 
     .hero {
+      position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr);
+      grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
+      gap: clamp(28px, 5vw, 72px);
       align-items: center;
-      gap: clamp(30px, 5vw, 70px);
-      min-height: calc(100vh - 67px);
-      padding: clamp(48px, 7vw, 98px) clamp(18px, 4vw, 72px) 54px;
+      min-height: calc(100dvh - 64px);
+      padding: clamp(42px, 6vw, 80px) clamp(18px, 4vw, 72px) 58px;
+      overflow: hidden;
     }
 
-    .eyebrow {
+    .hero::after {
+      content: "";
+      position: absolute;
+      left: 48%;
+      right: -12%;
+      bottom: -10%;
+      height: 34%;
+      border-radius: 999px 999px 0 0;
+      background: linear-gradient(180deg, color-mix(in srgb, var(--pond) 84%, transparent), color-mix(in srgb, var(--pond) 54%, transparent));
+      pointer-events: none;
+    }
+
+    .kicker {
       display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 7px 10px;
+      max-width: 100%;
+      padding: 7px 12px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.72);
-      color: var(--teal);
+      border-radius: 999px;
+      background: var(--surface);
+      color: #9a5512;
       font-size: 13px;
-      font-weight: 800;
+      font-weight: 900;
+      box-shadow: var(--soft-shadow);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .kicker {
+        color: #ffd36a;
+      }
     }
 
     h1 {
       max-width: 780px;
-      margin: 22px 0 18px;
-      font-size: clamp(42px, 6.8vw, 86px);
-      line-height: 0.98;
+      margin: 22px 0 16px;
+      font-size: clamp(42px, 6vw, 76px);
+      line-height: 1.03;
       letter-spacing: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .accent {
+      color: #bd650f;
+    }
+
+    .hero-break {
+      display: block;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .accent {
+        color: var(--accent-2);
+      }
     }
 
     .lede {
-      max-width: 670px;
+      max-width: 620px;
       margin: 0;
       color: var(--muted);
-      font-size: clamp(17px, 1.55vw, 21px);
-    }
-
-    .hero-points {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-      margin: 28px 0 0;
-      max-width: 660px;
-    }
-
-    .hero-point {
-      min-height: 82px;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.74);
-      box-shadow: 0 6px 18px rgba(21, 25, 30, 0.05);
-    }
-
-    .hero-point b {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 15px;
-    }
-
-    .hero-point span {
-      color: var(--muted);
-      font-size: 13px;
+      font-size: clamp(17px, 1.45vw, 20px);
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .actions {
       display: flex;
-      gap: 12px;
       flex-wrap: wrap;
+      gap: 12px;
       margin-top: 30px;
     }
 
     .button {
-      min-height: 46px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 9px;
-      padding: 10px 16px;
+      min-height: 46px;
+      padding: 10px 18px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
+      border-radius: 999px;
+      background: var(--surface-strong);
       color: var(--ink);
       text-decoration: none;
-      font-weight: 800;
-      box-shadow: 0 2px 0 rgba(21, 25, 30, 0.06);
+      font-weight: 900;
+      box-shadow: 0 3px 0 rgba(91, 61, 20, 0.10);
+      transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+      white-space: nowrap;
     }
 
     .button.primary {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: #fff;
+      border-color: color-mix(in srgb, var(--accent) 68%, #2d2417);
+      background: #2d2417;
+      color: #fff7db;
     }
 
-    .stage {
+    .button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 7px 18px rgba(91, 61, 20, 0.14);
+    }
+
+    .button:active {
+      transform: translateY(1px);
+    }
+
+    .hero-media {
       position: relative;
+      z-index: 1;
       min-height: 600px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background:
-        linear-gradient(90deg, rgba(217, 225, 234, 0.70) 1px, transparent 1px),
-        linear-gradient(rgba(217, 225, 234, 0.70) 1px, transparent 1px),
-        #ffffff;
-      background-size: 38px 38px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      isolation: isolate;
+      display: grid;
+      place-items: end center;
     }
 
-    .stage::before {
-      content: "";
-      position: absolute;
-      inset: 28px;
-      border: 1px dashed rgba(21, 25, 30, 0.12);
-      border-radius: 8px;
-      pointer-events: none;
+    .lulu-figure {
+      position: relative;
+      z-index: 3;
+      width: min(82vw, 500px);
+      filter: drop-shadow(0 24px 34px rgba(91, 61, 20, 0.18));
+      will-change: transform;
     }
 
-    .stage-corner {
-      position: absolute;
-      right: 26px;
-      top: 22px;
-      display: flex;
-      gap: 7px;
-      color: rgba(21, 25, 30, 0.42);
-      font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      letter-spacing: 0;
-      text-transform: uppercase;
-    }
-
-    .stage-corner::before {
-      content: "";
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 0 6px rgba(36, 116, 71, 0.12);
-    }
-
-    .flow-map {
-      position: absolute;
-      inset: 0;
-      z-index: 0;
+    .lulu-figure img {
+      display: block;
       width: 100%;
-      height: 100%;
-      pointer-events: none;
+      height: auto;
     }
 
-    .flow-path {
-      fill: none;
-      stroke: rgba(33, 86, 200, 0.42);
-      stroke-width: 2.4;
-      stroke-linecap: round;
-      stroke-dasharray: 10 14;
-    }
-
-    .flow-path.alt {
-      stroke: rgba(8, 117, 111, 0.35);
-      stroke-width: 1.7;
-    }
-
-    .flow-node {
-      fill: #fff;
-      stroke: rgba(21, 25, 30, 0.28);
-      stroke-width: 1.2;
-    }
-
-    .mail-stack {
+    .bubble {
       position: absolute;
-      left: 38px;
-      top: 62px;
-      width: 190px;
-      height: 190px;
       z-index: 2;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--soft-shadow);
+      backdrop-filter: blur(10px);
+      will-change: transform;
     }
 
     .mail-card {
-      position: absolute;
-      inset: 0;
+      left: 0;
+      top: 58px;
+      width: min(46%, 220px);
       padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      box-shadow: var(--soft);
-      transform-origin: 50% 90%;
-    }
-
-    .mail-card:nth-child(1) { transform: rotate(-8deg) translate(-10px, 16px); border-top: 5px solid var(--blue); }
-    .mail-card:nth-child(2) { transform: rotate(4deg) translate(8px, 6px); border-top: 5px solid var(--amber); }
-    .mail-card:nth-child(3) { transform: rotate(-1deg); border-top: 5px solid var(--teal); }
-
-    .mail-card small,
-    .system-card small {
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
     }
 
     .mail-card strong,
-    .system-card strong {
+    .calendar-card strong {
       display: block;
-      margin-top: 8px;
-      font-size: 17px;
-      line-height: 1.25;
+      margin-bottom: 6px;
+      font-size: 14px;
     }
 
-    .mail-card p,
-    .system-card p {
-      margin: 8px 0 0;
+    .mail-card span,
+    .calendar-card span {
+      display: block;
       color: var(--muted);
       font-size: 13px;
     }
 
-    .system-card {
-      position: absolute;
-      width: 215px;
-      padding: 17px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.93);
-      box-shadow: var(--soft);
-      z-index: 2;
+    .calendar-card {
+      right: 2px;
+      top: 130px;
+      width: min(44%, 208px);
+      padding: 16px;
     }
 
-    .ai-card { left: 50%; top: 42%; transform: translate(-50%, -50%); border-top: 5px solid var(--violet); }
-    .calendar-card { right: 42px; top: 70px; border-top: 5px solid var(--green); }
-    .guard-card { right: 70px; bottom: 116px; border-top: 5px solid var(--coral); }
-
-    .packet {
+    .route-line {
       position: absolute;
-      left: 144px;
-      top: 190px;
-      width: 13px;
-      height: 13px;
+      left: 86px;
+      right: 96px;
+      top: 226px;
+      height: 80px;
+      border-top: 3px dashed color-mix(in srgb, var(--accent) 60%, transparent);
       border-radius: 50%;
-      background: var(--blue);
-      box-shadow: 0 0 0 10px rgba(33, 86, 200, 0.12);
-      z-index: 3;
+      transform: rotate(8deg);
+      opacity: 0.74;
     }
 
-    .packet.secondary {
-      background: var(--teal);
-      box-shadow: 0 0 0 9px rgba(8, 117, 111, 0.13);
-    }
-
-    .packet.tertiary {
-      background: var(--coral);
-      box-shadow: 0 0 0 9px rgba(191, 63, 47, 0.12);
-    }
-
-    .metric-strip {
-      position: absolute;
-      left: 32px;
-      right: 32px;
-      top: 318px;
-      z-index: 1;
+    .workflow {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
+      grid-template-columns: 1.35fr 0.85fr 0.85fr;
+      gap: 14px;
+      padding: 0 clamp(18px, 4vw, 72px) 72px;
     }
 
-    .metric {
-      min-height: 66px;
-      padding: 11px 12px;
-      border: 1px solid rgba(217, 225, 234, 0.88);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.76);
-      backdrop-filter: blur(10px);
-    }
-
-    .metric b {
-      display: block;
-      font-size: 13px;
-    }
-
-    .metric span {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .decision-board {
-      position: absolute;
-      left: 34px;
-      right: 34px;
-      bottom: 30px;
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-    }
-
-    .decision {
-      min-height: 76px;
-      padding: 12px;
+    .workflow-card {
+      min-height: 154px;
+      padding: 20px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      position: relative;
-      z-index: 2;
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--soft-shadow);
     }
 
-    .decision b {
+    .workflow-card:first-child {
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 58%),
+        var(--surface-strong);
+    }
+
+    .workflow-card b {
       display: block;
+      margin-bottom: 8px;
       font-size: 18px;
     }
 
-    .decision span {
+    .workflow-card p {
+      margin: 0;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 15px;
     }
 
     .section {
-      padding: 70px clamp(18px, 4vw, 72px);
+      padding: 74px clamp(18px, 4vw, 72px);
       border-top: 1px solid var(--line);
     }
 
-    .section-head {
-      display: grid;
-      grid-template-columns: minmax(0, 0.72fr) minmax(260px, 0.28fr);
-      gap: 24px;
-      align-items: end;
-      margin-bottom: 28px;
-    }
-
-    .section-label {
-      margin: 0 0 10px;
-      color: var(--teal);
-      font-size: 13px;
-      font-weight: 850;
-      text-transform: uppercase;
-    }
-
-    h2 {
-      margin: 0;
-      font-size: clamp(30px, 4.4vw, 54px);
-      line-height: 1.05;
+    .section h2 {
+      max-width: 760px;
+      margin: 0 0 14px;
+      font-size: clamp(30px, 4vw, 52px);
+      line-height: 1.08;
       letter-spacing: 0;
     }
 
-    .section-note {
-      margin: 0;
+    .section > p {
+      max-width: 690px;
+      margin: 0 0 30px;
       color: var(--muted);
-      font-size: 15px;
+      font-size: 16px;
     }
 
-    .grid {
+    .user-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: 1.2fr 0.8fr 1fr;
+      grid-auto-rows: minmax(172px, auto);
       gap: 14px;
     }
 
-    .card {
-      min-height: 190px;
-      padding: 20px;
+    .tile {
+      padding: 22px;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.78);
-      box-shadow: 0 8px 28px rgba(21, 25, 30, 0.06);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--soft-shadow);
+      overflow: hidden;
     }
 
-    .card h3 {
+    .tile.wide {
+      grid-column: span 2;
+      background:
+        radial-gradient(circle at 88% 8%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 34%),
+        var(--surface-strong);
+    }
+
+    .tile.image {
+      display: grid;
+      place-items: center;
+      padding: 0;
+      background: color-mix(in srgb, var(--accent-2) 18%, var(--surface));
+    }
+
+    .tile.image img {
+      width: 100%;
+      height: 100%;
+      min-height: 300px;
+      object-fit: cover;
+    }
+
+    .tile h3 {
       margin: 0 0 10px;
-      font-size: 19px;
+      font-size: 20px;
     }
 
-    .card p,
-    .card li {
+    .tile p,
+    .tile li {
       color: var(--muted);
       font-size: 15px;
     }
 
-    .card ul {
-      margin: 10px 0 0;
+    .tile ul {
+      margin: 12px 0 0;
       padding-left: 18px;
     }
 
-    .split {
+    .developer-layout {
       display: grid;
-      grid-template-columns: minmax(0, 0.94fr) minmax(320px, 1.06fr);
+      grid-template-columns: minmax(0, 0.95fr) minmax(320px, 1.05fr);
       gap: 18px;
-      align-items: stretch;
+      align-items: start;
     }
 
-    .explain {
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      box-shadow: var(--soft);
-    }
-
-    .explain h3 {
-      margin: 0 0 12px;
-      font-size: 23px;
-    }
-
-    .explain p {
-      color: var(--muted);
-    }
-
-    .timeline {
-      position: relative;
-      padding-left: 28px;
-    }
-
-    .timeline::before {
-      content: "";
-      position: absolute;
-      left: 8px;
-      top: 8px;
-      bottom: 8px;
-      width: 2px;
-      background: var(--line);
+    .steps {
+      display: grid;
+      gap: 10px;
     }
 
     .step {
-      position: relative;
-      margin: 0 0 18px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-    }
-
-    .step::before {
-      content: "";
-      position: absolute;
-      left: -26px;
-      top: 21px;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--blue);
-      box-shadow: 0 0 0 6px rgba(33, 86, 200, 0.13);
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      background: var(--surface);
+      box-shadow: var(--soft-shadow);
     }
 
     .step h3 {
       margin: 0 0 6px;
-      font-size: 17px;
+      font-size: 18px;
     }
 
     .step p {
@@ -559,130 +454,122 @@
       grid-template-rows: auto 1fr;
       min-height: 420px;
       overflow: hidden;
-      border: 1px solid #26302d;
-      border-radius: 8px;
-      background: #111917;
+      border: 1px solid color-mix(in srgb, var(--accent) 32%, #000);
+      border-radius: var(--radius);
+      background: var(--code);
       box-shadow: var(--shadow);
     }
 
-    .code-tabs {
-      display: flex;
-      gap: 8px;
-      padding: 12px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-    }
-
-    .code-tab {
-      padding: 6px 9px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      color: #cfe1d9;
-      font-size: 12px;
-      font-weight: 800;
+    .code-title {
+      padding: 13px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      color: #ffd27e;
+      font: 900 13px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     pre {
       margin: 0;
       padding: 18px;
       overflow: auto;
-      color: #e9f4ef;
+      color: var(--code-text);
       font: 13px/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
-    .comment { color: #7eb2a8; }
-    .keyword { color: #8db7ff; }
-    .string { color: #ffd27e; }
-    .number { color: #f49f8f; }
+    .comment { color: #b5ce91; }
+    .keyword { color: #9fc2ff; }
+    .number { color: #ffb17b; }
 
-    .states {
+    .status-board {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
     }
 
-    .state {
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
+    .status {
       min-height: 170px;
-      position: relative;
-      overflow: hidden;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--soft-shadow);
     }
 
-    .state::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 5px;
-      background: var(--state-color, var(--blue));
+    .status b {
+      display: block;
+      margin-bottom: 10px;
+      color: color-mix(in srgb, var(--accent) 86%, var(--ink));
+      font: 900 18px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
-    .state h3 {
-      margin: 8px 0 8px;
-    }
-
-    .state p {
+    .status p {
+      margin: 0;
       color: var(--muted);
       font-size: 14px;
     }
 
-    .deploy {
+    .operations {
       display: grid;
-      grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
-      gap: 18px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .panel {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 22px;
+    }
+
+    .panel p {
+      color: var(--muted);
+      font-size: 15px;
     }
 
     .footer {
       padding: 36px clamp(18px, 4vw, 72px);
       border-top: 1px solid var(--line);
       color: var(--muted);
+      background: color-mix(in srgb, var(--page-soft) 80%, transparent);
     }
 
-    @media (max-width: 980px) {
+    .footer p {
+      max-width: 980px;
+      margin: 0;
+    }
+
+    .reveal {
+      will-change: transform;
+    }
+
+    @media (max-width: 1040px) {
       .hero,
-      .split,
-      .deploy,
-      .section-head {
+      .developer-layout,
+      .operations {
         grid-template-columns: 1fr;
       }
 
-      .stage {
-        min-height: 680px;
+      .hero {
+        min-height: auto;
       }
 
-      .mail-stack {
-        left: 30px;
-        top: 38px;
+      .hero-media {
+        min-height: 560px;
       }
 
-      .ai-card {
-        left: 36px;
-        top: 290px;
-        transform: none;
-      }
-
-      .calendar-card {
-        right: 30px;
-        top: 260px;
-      }
-
-      .guard-card {
-        left: 30px;
-        right: auto;
-        bottom: 138px;
-      }
-
-      .flow-map,
-      .packet {
-        display: none;
-      }
-
-      .grid,
-      .states {
+      .workflow,
+      .user-grid,
+      .status-board {
         grid-template-columns: 1fr 1fr;
+      }
+
+      .tile.wide {
+        grid-column: span 1;
       }
     }
 
@@ -696,44 +583,81 @@
         justify-content: flex-start;
       }
 
-      .hero-points,
-      .grid,
-      .states,
-      .decision-board {
+      .hero {
+        padding-top: 36px;
+      }
+
+      h1 {
+        font-size: clamp(32px, 9.5vw, 38px);
+        word-break: break-all;
+      }
+
+      .lede {
+        font-size: 16px;
+      }
+
+      .hero-media {
+        min-height: 560px;
+        padding-top: 108px;
+      }
+
+      .lulu-figure {
+        width: min(86vw, 340px);
+      }
+
+      .mail-card,
+      .calendar-card {
+        width: calc(50% - 44px);
+        padding: 14px;
+      }
+
+      .mail-card strong,
+      .calendar-card strong,
+      .mail-card span,
+      .calendar-card span {
+        font-size: 12px;
+      }
+
+      .mail-card {
+        left: 28px;
+        top: 18px;
+      }
+
+      .calendar-card {
+        right: 28px;
+        top: 18px;
+      }
+
+      .route-line {
+        left: 54px;
+        right: 52px;
+        top: 130px;
+      }
+
+      .workflow,
+      .user-grid,
+      .status-board {
         grid-template-columns: 1fr;
       }
 
-      .stage {
-        min-height: 970px;
-      }
-
-      .mail-stack,
-      .system-card {
-        left: 22px !important;
-        right: 22px !important;
-        width: auto;
-      }
-
-      .mail-stack { top: 28px; }
-      .ai-card { top: 270px; }
-      .calendar-card { top: 410px; }
-      .guard-card { top: 550px; bottom: auto; }
-
-      .metric-strip {
-        top: 700px;
-        grid-template-columns: 1fr;
+      .section {
+        padding-top: 58px;
+        padding-bottom: 58px;
       }
     }
   </style>
 </head>
 <body>
   <nav class="nav">
-    <div class="brand"><span class="mark">OA</span><span>邮件活动自动入日程</span></div>
+    <div class="brand">
+      <img src="assets/lulu-hero.png" alt="" width="34" height="40">
+      <span>水豚噜噜值班台</span>
+    </div>
     <div class="links">
-      <a href="#user">给用户</a>
-      <a href="#developer">给开发者</a>
+      <a href="#user">用户视角</a>
+      <a href="#developer">开发实现</a>
       <a href="#states">状态规则</a>
-      <a href="#notifications">通知</a>
+      <a href="#notifications">Hermes</a>
       <a href="#deploy">部署</a>
       <a href="https://github.com/whitesweater/outlook-event-automation">GitHub</a>
     </div>
@@ -742,167 +666,104 @@
   <main>
     <section class="hero">
       <div>
-        <span class="eyebrow">Outlook / Gmail -> AI -> Calendar</span>
-        <h1>把活动邮件变成可信的日历事件</h1>
-        <p class="lede">
-          这是一个常驻服务器上的邮件处理代理：它读取你的活动邮件，用结构化 AI 抽取时间、地点和标题，
-          只把足够确定的事件写入日历，并把原始邮件内容附在日历详情里，方便之后追溯。
-        </p>
-        <div class="hero-points">
-          <div class="hero-point"><b>给用户</b><span>你只需要把活动邮件送进目标邮箱，服务会自动识别、过滤、写入日历。</span></div>
-          <div class="hero-point"><b>给开发者</b><span>核心是 Microsoft Graph/Gmail API + Responses API + SQLite 去重 + systemd 常驻。</span></div>
-          <div class="hero-point"><b>保守写入</b><span>多活动汇总、取消通知、时间冲突、信息不完整，不会自动写进日历。</span></div>
-          <div class="hero-point"><b>Hermes 助手</b><span>自托管 Hermes 可查询日程；确认后才通过受控接口创建 Outlook 事件。</span></div>
-        </div>
+        <span class="kicker">Gmail / Outlook -> AI -> Calendar</span>
+        <h1><span class="accent">噜噜值班</span><br>活动邮件自动进日历</h1>
+        <p class="lede">读取活动邮件，抽取时间地点，只把足够确定的事件写入日历，并保留原文追溯。</p>
         <div class="actions">
           <a class="button primary" href="https://github.com/whitesweater/outlook-event-automation">查看仓库</a>
-          <a class="button" href="#developer">看技术实现</a>
+          <a class="button" href="#developer">技术实现</a>
         </div>
       </div>
 
-      <div class="stage" aria-label="邮件处理流程动画">
-        <div class="stage-corner">live agent</div>
-        <svg class="flow-map" viewBox="0 0 620 560" aria-hidden="true">
-          <path class="flow-path" d="M150 176 C250 76 324 162 336 238 C350 322 474 264 508 128"></path>
-          <path class="flow-path alt" d="M151 176 C252 250 342 306 474 398"></path>
-          <path class="flow-path alt" d="M336 238 C286 352 188 420 112 500"></path>
-          <circle class="flow-node" cx="150" cy="176" r="8"></circle>
-          <circle class="flow-node" cx="336" cy="238" r="8"></circle>
-          <circle class="flow-node" cx="508" cy="128" r="8"></circle>
-          <circle class="flow-node" cx="474" cy="398" r="8"></circle>
-        </svg>
-        <div class="mail-stack">
-          <div class="mail-card"><small>Mail</small><strong>安全通知</strong><p>不是日程，直接忽略。</p></div>
-          <div class="mail-card"><small>Mail</small><strong>Daily Event Alert</strong><p>汇总邮件，按规则跳过。</p></div>
-          <div class="mail-card"><small>Mail</small><strong>活动邀请</strong><p>包含时间、地点和正文。</p></div>
+      <div class="hero-media" aria-label="水豚噜噜处理邮件和日历的主题视觉">
+        <div class="bubble mail-card">
+          <strong>Outlook / Gmail</strong>
+          <span>读取新活动邮件</span>
         </div>
-        <div class="packet packet-one"></div>
-        <div class="packet packet-two secondary"></div>
-        <div class="packet packet-three tertiary"></div>
-        <article class="system-card ai-card">
-          <small>Batch AI</small>
-          <strong>结构化抽取</strong>
-          <p>一次处理 20 封邮件，返回 JSON schema 约束的事件判断。</p>
-        </article>
-        <article class="system-card calendar-card">
-          <small>Calendar</small>
-          <strong>写入日历</strong>
-          <p>eligible 事件自动创建；Hermes 请求必须先确认再写 Outlook。</p>
-        </article>
-        <article class="system-card guard-card">
-          <small>Guardrail</small>
-          <strong>复核保护</strong>
-          <p>取消、撤回、多事件、缺时间，保留日志但不自动写。</p>
-        </article>
-        <div class="metric-strip">
-          <div class="metric"><b>batch_size = 20</b><span>批量请求，失败自动拆批</span></div>
-          <div class="metric"><b>poll = 30s</b><span>服务器轮询新邮件</span></div>
-          <div class="metric"><b>body attached</b><span>事件正文保留原邮件</span></div>
+        <div class="bubble calendar-card">
+          <strong>Calendar</strong>
+          <span>可信事件才写入</span>
         </div>
-        <div class="decision-board">
-          <div class="decision"><b>ignored</b><span>明确不是日程</span></div>
-          <div class="decision"><b>needs_review</b><span>像活动但不够稳</span></div>
-          <div class="decision"><b>created</b><span>已写入日历</span></div>
-          <div class="decision"><b>SQLite</b><span>去重与审计</span></div>
-        </div>
+        <div class="route-line" aria-hidden="true"></div>
+        <figure class="lulu-figure">
+          <img src="assets/lulu-hero.png" alt="水豚噜噜形象，黄色身体，橙色脸部，头顶橘子。" width="760" height="903">
+        </figure>
       </div>
     </section>
 
+    <div class="workflow" aria-label="系统工作流摘要">
+      <article class="workflow-card reveal">
+        <b>一封邮件进来，先由噜噜判断是不是日程。</b>
+        <p>账号通知、普通提醒、汇总邮件会被过滤；像活动但不够稳的内容进入复核，不直接污染日历。</p>
+      </article>
+      <article class="workflow-card reveal">
+        <b>默认批量抽取</b>
+        <p>每批 20 封邮件，失败后自动拆批，避免单个上游错误拖住整轮处理。</p>
+      </article>
+      <article class="workflow-card reveal">
+        <b>可追溯写入</b>
+        <p>日历事件包含摘要、来源邮件、发件人、收信时间、链接和原始正文。</p>
+      </article>
+    </div>
+
     <section class="section" id="user">
-      <div class="section-head">
-        <div>
-          <p class="section-label">给用户看的</p>
-          <h2>它到底帮你做什么</h2>
-        </div>
-        <p class="section-note">这个部分关心使用结果：哪些邮件会进日历、哪些不会、日历项里有什么。</p>
-      </div>
-      <div class="grid">
-        <article class="card reveal">
-          <h3>自动处理活动邮件</h3>
+      <h2>给用户看的结果</h2>
+      <p>用户只需要把活动邮件送进目标邮箱。服务在服务器常驻运行，不依赖本地电脑一直开着。</p>
+      <div class="user-grid">
+        <article class="tile wide reveal">
+          <h3>活动邮件自动入日历</h3>
           <p>讲座、工作坊、报名活动、培训、维护通知等邮件会被识别，提取标题、开始时间、结束时间、地点和说明。</p>
         </article>
-        <article class="card reveal">
-          <h3>不把垃圾通知塞进日历</h3>
-          <p>账号登录通知、天气提醒、普通系统通知会被标记为 <code>ignored</code>，不会进入复核队列，也不会写入日历。</p>
+        <article class="tile image reveal">
+          <img src="assets/lulu-reference.webp" alt="用户提供的水豚噜噜参考图，用于主页固定 IP 视觉方向。">
         </article>
-        <article class="card reveal">
-          <h3>遇到不确定就停住</h3>
-          <p>一封邮件里有多个活动、时间冲突、缺少结束时间、取消通知或撤回通知，会进入 <code>needs_review</code>，不会自动创建。</p>
+        <article class="tile reveal">
+          <h3>不确定就停住</h3>
+          <p>多活动混杂、时间冲突、缺少结束时间、取消或撤回通知，都会进入 <code>needs_review</code>。</p>
         </article>
-        <article class="card reveal">
-          <h3>日历项能追溯来源</h3>
-          <p>Outlook Calendar 事件正文会附上活动摘要、原始邮件主题、发件人、收信时间、原始链接和邮件正文。</p>
+        <article class="tile reveal">
+          <h3>标题默认中文化</h3>
+          <p>标题、摘要、地点、复核原因尽量用中文写；英文项目名、机构名、房间名保留。</p>
         </article>
-        <article class="card reveal">
-          <h3>默认中文化</h3>
-          <p>标题、摘要、地点、复核原因尽量用中文写；英文项目名、机构名、房间名会尽量保留。</p>
-        </article>
-        <article class="card reveal">
-          <h3>常驻运行</h3>
-          <p>服务部署在服务器上，以 systemd 常驻；新邮件进入后按轮询间隔处理，不依赖本地电脑一直开着。</p>
-        </article>
-        <article class="card reveal">
-          <h3>Hermes 可查可办</h3>
-          <p>可以定时生成“过去 24 小时新增活动”和“待复核邮件”日报，也能让自托管 Hermes 查询近期日程；创建 Outlook 事件前会先要求用户明确确认。</p>
+        <article class="tile reveal">
+          <h3>Hermes 能查能提醒</h3>
+          <p>自托管 Hermes 可查询近期日程、推送日报和健康报告。创建 Outlook 事件前需要用户确认。</p>
         </article>
       </div>
     </section>
 
     <section class="section" id="developer">
-      <div class="section-head">
-        <div>
-          <p class="section-label">给开发者看的</p>
-          <h2>系统是怎么工作的</h2>
-        </div>
-        <p class="section-note">这个部分关心实现：API、模型、状态机、去重、批处理和部署边界。</p>
-      </div>
-      <div class="split">
-        <div class="timeline">
+      <h2>开发者关心的边界</h2>
+      <p>核心脚本使用 Python 标准库实现。外部依赖集中在 Microsoft Graph、Gmail API、OpenAI-compatible Responses API 和系统服务。</p>
+      <div class="developer-layout">
+        <div class="steps">
           <article class="step reveal">
-            <h3>1. 读取消息</h3>
-            <p>Outlook 通过 Microsoft Graph 读取 `/me/messages` 或指定 mailbox；Gmail 通过 Gmail API 读取邮件正文。</p>
+            <h3>读取消息</h3>
+            <p>Outlook 通过 Microsoft Graph 读取 <code>/me/messages</code> 或指定 mailbox；Gmail 通过 Gmail API 读取邮件正文。</p>
           </article>
           <article class="step reveal">
-            <h3>2. 前置规则过滤</h3>
-            <p><code>Daily Event Alert</code> 汇总邮件直接忽略；取消和撤回类邮件会被强制复核，不允许自动创建。</p>
+            <h3>前置过滤</h3>
+            <p><code>Daily Event Alert</code> 汇总邮件直接忽略；取消和撤回类邮件强制复核，不自动创建。</p>
           </article>
           <article class="step reveal">
-            <h3>3. 批量 AI 抽取</h3>
-            <p>默认每批 20 封邮件，请求 OpenAI-compatible Responses API，使用 JSON schema 要求每封邮件返回一个事件判断。</p>
+            <h3>结构化抽取</h3>
+            <p>Responses API 返回 JSON schema 约束结果，每封邮件得到一个明确状态和原因。</p>
           </article>
           <article class="step reveal">
-            <h3>4. 自动拆批重试</h3>
-            <p>如果代理 500、上游 reset、或模型返回数量不一致，批次会自动从 20 拆成 10、5，单封失败不写 processed，留给下一轮重试。</p>
-          </article>
-          <article class="step reveal">
-            <h3>5. 写入与记录</h3>
-            <p>eligible 事件写入 Outlook/Google Calendar；Hermes 的手动创建请求走受控 <code>/calendar-events</code> 流程，确认后才写入 Outlook。</p>
-          </article>
-          <article class="step reveal">
-            <h3>6. 通知出口</h3>
-            <p>日报、健康报告和故障告警会被格式化成 Hermes-compatible webhook payload；Hermes 也可通过轻量 HTTP API 查询日程状态。</p>
+            <h3>写入与审计</h3>
+            <p>eligible 事件写入 Outlook 或 Google Calendar；SQLite 记录去重和处理状态。</p>
           </article>
         </div>
 
         <div class="code-panel reveal">
-          <div class="code-tabs">
-            <span class="code-tab">event_agent.py</span>
-            <span class="code-tab">Responses API</span>
-            <span class="code-tab">systemd</span>
-          </div>
+          <div class="code-title">event_agent.py</div>
           <pre><code><span class="comment"># 常驻循环：读邮件 -> 抽取 -> 判断 -> 写日历</span>
 <span class="keyword">python3</span> event_agent.py \
   --config config.local.json serve --write
 
 <span class="comment"># 批量抽取默认配置</span>
 extraction.batch_size = <span class="number">20</span>
-extraction.openai_model = <span class="string">"gpt-5.5"</span>
-calendar.include_source_email_body = <span class="keyword">true</span>
-
-<span class="comment"># 输出状态</span>
-ignored       <span class="comment"># 明确不是日程</span>
-needs_review  <span class="comment"># 像活动但不够确定</span>
-created       <span class="comment"># 已写入日历</span>
+calendar.include_source_email_body = true
 
 <span class="comment"># Hermes 查日程 / 确认后建日程</span>
 GET  /agenda
@@ -913,98 +774,49 @@ POST /calendar-events  <span class="comment"># confirmed: true</span></code></pr
     </section>
 
     <section class="section" id="states">
-      <div class="section-head">
-        <div>
-          <p class="section-label">状态规则</p>
-          <h2>为什么不是什么都自动写</h2>
-        </div>
-        <p class="section-note">日历是高信任界面，宁愿少写，也不要把错误事件塞进去。</p>
-      </div>
-      <div class="states">
-        <article class="state reveal" style="--state-color: var(--green)">
-          <h3>created</h3>
+      <h2>状态规则保守一点</h2>
+      <p>日历是高信任界面，宁愿少写，也不要把错误事件塞进去。</p>
+      <div class="status-board">
+        <article class="status reveal">
+          <b>created</b>
           <p>时间、地点、标题、置信度都足够，且不是重复事件。服务模式下会创建日历项。</p>
         </article>
-        <article class="state reveal" style="--state-color: var(--blue)">
-          <h3>dry_run</h3>
-          <p>测试模式下的可写候选，只展示结果，不真的写日历。</p>
+        <article class="status reveal">
+          <b>dry_run</b>
+          <p>测试模式下的可写候选，只展示结果，不真的写入日历。</p>
         </article>
-        <article class="state reveal" style="--state-color: var(--amber)">
-          <h3>needs_review</h3>
-          <p>像活动，但缺结束时间、多活动混杂、信息冲突、取消/撤回，暂时只保留日志。</p>
+        <article class="status reveal">
+          <b>needs_review</b>
+          <p>像活动但缺信息、多活动混杂、信息冲突或取消撤回，暂时只保留日志。</p>
         </article>
-        <article class="state reveal" style="--state-color: var(--coral)">
-          <h3>ignored</h3>
+        <article class="status reveal">
+          <b>ignored</b>
           <p>明确不是日程，或者命中特定噪声规则，例如 Daily Event Alert 汇总邮件。</p>
         </article>
       </div>
     </section>
 
     <section class="section" id="notifications">
-      <div class="section-head">
-        <div>
-          <p class="section-label">Hermes 联动</p>
-          <h2>能推送，也能查日程和确认建日程</h2>
-        </div>
-        <p class="section-note">本项目暴露受控的本地 HTTP/API 能力；自托管 Hermes 负责把 IM 指令转成安全的查询或确认动作。</p>
-      </div>
-      <div class="split">
-        <div class="explain reveal">
-          <h3>当前架构</h3>
-          <p>邮件日历服务运行在服务器上，生成 <code>daily_digest</code>、<code>fault</code> 和 <code>health_report</code> 三类消息。</p>
-          <p>这些消息通过 <code>HERMES_WEBHOOK_URL</code> 发送到自托管 Hermes route，再由它分发到 <code>weixin</code>、<code>qqbot</code> 或 <code>feishu</code>。</p>
-          <p>Hermes 可以读取本项目的 <code>/agenda</code>、<code>/agenda-range</code>、<code>/digest</code>、<code>/events</code> 和 <code>/health</code> 来回答“今天有什么安排”；如果用户要新增日程，必须先向用户确认标题、日期、时间、时区和日历目标，再调用 <code>/calendar-events</code> 写入 Outlook Calendar。</p>
-        </div>
-        <div class="code-panel reveal">
-          <div class="code-tabs">
-            <span class="code-tab">Hermes Flow</span>
-          </div>
-          <pre><code><span class="keyword">python3</span> event_agent.py --config config.local.json \
-  notify-digest --hours <span class="number">24</span>
-
-<span class="keyword">python3</span> event_agent.py --config config.local.json \
-  health-report --always --notify-target hermes-webhook
-
-<span class="keyword">python3</span> event_agent.py --config config.local.json \
-  api-server
-
-<span class="comment"># 自托管 Hermes 查询</span>
-GET /agenda
-GET /agenda-range
-GET /events
-GET /digest?hours=<span class="number">24</span>
-GET /health
-
-<span class="comment"># 建日程必须经过用户确认</span>
-POST /calendar-events  <span class="comment"># confirmed: true</span>
-
-<span class="comment"># payload.type</span>
-daily_digest  <span class="comment"># 每日新增活动</span>
-fault         <span class="comment"># 服务异常告警</span>
-health_report <span class="comment"># 主动健康检查</span></code></pre>
-        </div>
+      <h2>Hermes 联动</h2>
+      <p>本项目暴露受控的本地 HTTP/API 能力，自托管 Hermes 负责把 IM 指令转成安全的查询或确认动作。</p>
+      <div class="operations">
+        <article class="panel reveal">
+          <h3>推送</h3>
+          <p>服务可以生成 <code>daily_digest</code>、<code>fault</code> 和 <code>health_report</code>，通过 <code>HERMES_WEBHOOK_URL</code> 发到自托管 route。</p>
+        </article>
+        <article class="panel reveal">
+          <h3>查询与创建</h3>
+          <p>Hermes 可读取 <code>/agenda</code>、<code>/agenda-range</code>、<code>/digest</code>、<code>/events</code> 和 <code>/health</code>。新增日程必须先确认标题、日期、时间、时区和日历目标。</p>
+        </article>
       </div>
     </section>
 
     <section class="section" id="deploy">
-      <div class="section-head">
-        <div>
-          <p class="section-label">部署方式</p>
-          <h2>从仓库到服务器</h2>
-        </div>
-        <p class="section-note">项目没有强依赖框架，核心脚本是标准库 Python，适合放在小服务器上长期运行。</p>
-      </div>
-      <div class="deploy">
-        <div class="explain reveal">
-          <h3>运行前需要什么</h3>
-          <p>你需要一个 Microsoft 或 Google OAuth 应用、一个 OpenAI-compatible Responses API key，以及一份本地配置文件。</p>
-          <p>生产环境不要提交 <code>.env</code>、<code>config.local.json</code>、SQLite 数据库或扫描日志。</p>
-        </div>
-        <div class="code-panel reveal">
-          <div class="code-tabs">
-            <span class="code-tab">Quickstart</span>
-          </div>
-          <pre><code><span class="keyword">cd</span> outlook_event_automation
+      <h2>部署到服务器</h2>
+      <p>生产环境不要提交 <code>.env</code>、<code>config.local.json</code>、SQLite 数据库或扫描日志。</p>
+      <div class="code-panel reveal">
+        <div class="code-title">Quickstart</div>
+        <pre><code><span class="keyword">cd</span> outlook_event_automation
 <span class="keyword">cp</span> config.example.json config.local.json
 <span class="keyword">cp</span> .env.example .env
 
@@ -1012,13 +824,12 @@ health_report <span class="comment"># 主动健康检查</span></code></pre>
 <span class="keyword">python3</span> event_agent.py --config config.local.json run \
   --source outlook --sink none --limit <span class="number">20</span> --force
 <span class="keyword">python3</span> event_agent.py --config config.local.json serve --write</code></pre>
-        </div>
       </div>
     </section>
   </main>
 
   <footer class="footer">
-    <p>Outlook Event Automation：一个把活动邮件变成可信日历的自动化代理。仓库托管于 GitHub，主页使用 GSAP timeline 与 ScrollTrigger 构建，并支持自托管 Hermes 查询日程、推送报告，以及在用户确认后通过受控流程创建 Outlook Calendar 事件。</p>
+    <p>Outlook / Gmail Event Agent：把活动邮件变成可信日历的自动化代理。主页主视觉来自用户提供的水豚噜噜参考图，经 AI 背景移除与本地透明化处理后用于 GitHub Pages 展示。</p>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
@@ -1026,124 +837,72 @@ health_report <span class="comment"># 主动健康检查</span></code></pre>
   <script>
     gsap.registerPlugin(ScrollTrigger);
 
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    gsap.defaults({ duration: reduceMotion ? 0 : 0.8, ease: "power3.out" });
+    const mm = gsap.matchMedia();
 
-    if (reduceMotion) {
-      gsap.set(".nav, .eyebrow, h1, .lede, .hero-point, .actions, .stage, .mail-card, .system-card, .decision, .metric, .reveal", { autoAlpha: 1, y: 0, x: 0, scale: 1 });
-    } else {
-      const intro = gsap.timeline({ defaults: { ease: "power3.out" } });
-      intro
-        .from(".nav", { y: -18, autoAlpha: 0, duration: 0.5 })
-        .from(".eyebrow", { y: 18, autoAlpha: 0 }, "<0.1")
-        .from("h1", { y: 32, autoAlpha: 0, duration: 0.9 }, "<0.08")
-        .from(".lede", { y: 20, autoAlpha: 0 }, "<0.18")
-        .from(".hero-point", { y: 18, autoAlpha: 0, stagger: 0.06 }, "<0.12")
-        .from(".actions .button", { y: 14, autoAlpha: 0, stagger: 0.08 }, "<0.12")
-        .from(".stage", { y: 28, autoAlpha: 0, duration: 0.8 }, "<0.05")
-        .from(".flow-path", { strokeDashoffset: 90, autoAlpha: 0, stagger: 0.08 }, "<0.08")
-        .from(".mail-card", { y: 24, rotation: -14, autoAlpha: 0, stagger: 0.08 }, "<0.18")
-        .from(".system-card", { scale: 0.9, autoAlpha: 0, stagger: 0.1 }, "<0.2")
-        .from(".metric", { y: 14, autoAlpha: 0, stagger: 0.06 }, "<0.05")
-        .from(".decision", { y: 16, autoAlpha: 0, stagger: 0.05 }, "<0.05");
+    mm.add(
+      {
+        reduceMotion: "(prefers-reduced-motion: reduce)",
+        isDesktop: "(min-width: 1041px)"
+      },
+      (context) => {
+        const { reduceMotion, isDesktop } = context.conditions;
 
-      gsap.to(".flow-path", {
-        strokeDashoffset: -96,
-        duration: 3.8,
-        ease: "none",
-        repeat: -1
-      });
+        if (reduceMotion) {
+          gsap.set(".lulu-figure, .bubble, .route-line, .reveal", { x: 0, y: 0, scale: 1, rotation: 0 });
+          return;
+        }
 
-      const stream = (selector, delay, scale) => {
-        const tl = gsap.timeline({ repeat: -1, delay });
-        tl.set(selector, { x: 0, y: 0, scale, autoAlpha: 0 })
-          .to(selector, { autoAlpha: 1, duration: 0.12 })
-          .to(selector, { x: 185, y: 62, duration: 0.85, ease: "power1.inOut" })
-          .to(selector, { x: 330, y: -58, duration: 0.85, ease: "power1.inOut" })
-          .to(selector, { x: 334, y: 206, duration: 0.82, ease: "power1.inOut" })
-          .to(selector, { x: -38, y: 312, autoAlpha: 0, duration: 0.72, ease: "power1.in" })
-          .to(selector, { duration: 0.4 });
-      };
+        const intro = gsap.timeline({ defaults: { duration: 0.72, ease: "power3.out" } });
+        intro
+          .from(".kicker", { y: 14 })
+          .from("h1", { y: 24, duration: 0.82 }, "<0.08")
+          .from(".lede", { y: 16 }, "<0.14")
+          .from(".actions .button", { y: 10, stagger: 0.08 }, "<0.12")
+          .from(".lulu-figure", { y: 28, scale: 0.965, duration: 0.86 }, "<0.04")
+          .from(".bubble", { y: 18, stagger: 0.08 }, "<0.10")
+          .from(".route-line", { scaleX: 0.72, transformOrigin: "left center" }, "<0.10");
 
-      stream(".packet-one", 0, 1);
-      stream(".packet-two", 0.85, 0.82);
-      stream(".packet-three", 1.7, 0.68);
-
-      gsap.to(".mail-card", {
-        y: (i) => i % 2 ? -8 : 8,
-        rotation: (i) => i % 2 ? 7 : -7,
-        duration: 2.6,
-        ease: "sine.inOut",
-        yoyo: true,
-        repeat: -1,
-        stagger: 0.12
-      });
-
-      gsap.to(".ai-card", {
-        y: -10,
-        duration: 2,
-        ease: "sine.inOut",
-        yoyo: true,
-        repeat: -1
-      });
-
-      gsap.to(".calendar-card, .guard-card", {
-        y: (i) => i ? 9 : -9,
-        duration: 2.4,
-        ease: "sine.inOut",
-        yoyo: true,
-        repeat: -1,
-        stagger: 0.15
-      });
-
-      ScrollTrigger.batch(".reveal", {
-        start: "top 82%",
-        once: true,
-        onEnter: (batch) => gsap.fromTo(batch,
-          { y: 34, autoAlpha: 0 },
-          { y: 0, autoAlpha: 1, stagger: 0.08, duration: 0.75, overwrite: true }
-        )
-      });
-
-      const mm = gsap.matchMedia();
-      mm.add("(min-width: 981px)", () => {
-        gsap.timeline({
-          scrollTrigger: {
-            trigger: ".hero",
-            start: "top top",
-            end: "bottom top",
-            scrub: 0.7
-          }
-        })
-          .to(".stage", { y: -28, rotateX: 0, scale: 0.985 }, 0)
-          .to(".mail-stack", { y: 26 }, 0)
-          .to(".calendar-card", { y: -24 }, 0)
-          .to(".guard-card", { y: 18 }, 0)
-          .to(".decision-board", { y: -16 }, 0);
-
-        const devTl = gsap.timeline({
-          scrollTrigger: {
-            trigger: "#developer",
-            start: "top 72%",
-            end: "bottom 40%",
-            scrub: 0.8
-          }
+        gsap.to(".lulu-figure", {
+          y: -10,
+          duration: 2.4,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true
         });
-        devTl
-          .to(".code-panel", { y: -18, boxShadow: "0 32px 90px rgba(21,25,30,0.20)" }, 0)
-          .to(".step", { borderColor: "rgba(33,86,200,0.38)", stagger: 0.04 }, 0);
 
-        gsap.to(".state", {
-          y: (i) => i % 2 ? -12 : 12,
-          scrollTrigger: {
-            trigger: "#states",
-            start: "top bottom",
-            end: "bottom top",
-            scrub: 1
-          }
+        gsap.to(".bubble", {
+          y: (i) => i % 2 ? -8 : 8,
+          rotation: (i) => i % 2 ? 1.4 : -1.4,
+          duration: 2.8,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true,
+          stagger: 0.18
         });
-      });
-    }
+
+        ScrollTrigger.batch(".reveal", {
+          start: "top 84%",
+          once: true,
+          onEnter: (batch) => gsap.fromTo(batch, { y: 28 }, { y: 0, stagger: 0.07, duration: 0.68, ease: "power3.out", overwrite: true })
+        });
+
+        if (isDesktop) {
+          gsap.timeline({
+            scrollTrigger: {
+              trigger: ".hero",
+              start: "top top",
+              end: "bottom top",
+              scrub: 0.8
+            }
+          })
+            .to(".lulu-figure", { y: -34, scale: 0.98 }, 0)
+            .to(".mail-card", { y: 24 }, 0)
+            .to(".calendar-card", { y: -18 }, 0);
+        }
+
+        return () => ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
+      }
+    );
   </script>
 </body>
 </html>
