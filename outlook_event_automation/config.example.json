@@ -88,6 +88,11 @@
     "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
     "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
     "webhook_timeout_seconds": 30,
+    "new_event_alerts": true,
+    "new_event_alert_statuses": [
+      "created",
+      "needs_review"
+    ],
     "daily_digest_hours": 24,
     "daily_digest_limit": 20,
     "fault_cooldown_minutes": 30,

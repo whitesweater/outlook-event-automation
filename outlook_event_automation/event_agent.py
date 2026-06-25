@@ -1972,6 +1972,148 @@ def notify_fault(config: dict[str, Any], message: str, context: dict[str, Any]) 
         print(f"[{utc_now().isoformat()}] ERROR: failed to send fault notification: {exc}", file=sys.stderr)
 
 
+def new_event_alerts_enabled(config: dict[str, Any]) -> bool:
+    notify = notification_config(config)
+    return bool(notify.get("new_event_alerts", True))
+
+
+def new_event_alert_statuses(config: dict[str, Any]) -> set[str]:
+    notify = notification_config(config)
+    value = notify.get("new_event_alert_statuses", ["created", "needs_review"])
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",")]
+    elif isinstance(value, list):
+        items = [str(item).strip() for item in value]
+    else:
+        items = []
+    statuses = {item for item in items if item}
+    return statuses or {"created", "needs_review"}
+
+
+def event_time_window(event: dict[str, Any]) -> str:
+    start_raw = str(event.get("start_time") or "")
+    end_raw = str(event.get("end_time") or "")
+    if not start_raw:
+        return "时间待确认"
+    start_label = compact_datetime(start_raw)
+    if not end_raw:
+        return start_label
+    end_label = compact_datetime(end_raw)
+    try:
+        start_dt = parse_datetime(start_raw, str(event.get("timezone") or "UTC"))
+        end_dt = parse_datetime(end_raw, str(event.get("timezone") or "UTC"))
+        if start_dt.date() == end_dt.date():
+            return f"{start_dt.strftime('%Y-%m-%d %H:%M')}-{end_dt.strftime('%H:%M')}"
+    except AgentError:
+        pass
+    return f"{start_label} 至 {end_label}"
+
+
+def new_event_alert_payload(
+    event: dict[str, Any],
+    status: str,
+    sink: str,
+    remote_event_id: str = "",
+    remote_event_link: str = "",
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "sink": sink,
+        "remote_event_id": remote_event_id,
+        "remote_event_link": remote_event_link,
+        "event": {
+            "title": event.get("title", ""),
+            "start_time": event.get("start_time", ""),
+            "end_time": event.get("end_time", ""),
+            "timezone": event.get("timezone", ""),
+            "location": event.get("location", ""),
+            "organizer": event.get("organizer", ""),
+            "confidence": event.get("confidence", 0),
+            "reason": event.get("reason", ""),
+            "source": event.get("source", ""),
+            "source_email_id": event.get("source_email_id", ""),
+            "source_subject": event.get("source_subject", ""),
+            "source_sender": event.get("source_sender", ""),
+            "source_received_at": event.get("source_received_at", ""),
+            "source_web_link": event.get("source_web_link", ""),
+        },
+    }
+
+
+def build_new_event_alert(
+    event: dict[str, Any],
+    status: str,
+    sink: str,
+    remote_event_link: str = "",
+) -> dict[str, Any]:
+    if status == "created":
+        heading = "新活动已加入日历"
+        event_type = "new_event"
+        severity = "info"
+    else:
+        heading = "发现疑似新活动，需要确认"
+        event_type = "event_needs_review"
+        severity = "warning"
+
+    location = str(event.get("location") or "地点待确认")
+    source_subject = str(event.get("source_subject") or event.get("title") or "未命名邮件")
+    source_sender = str(event.get("source_sender") or "发件人未知")
+    reason = str(event.get("reason") or "").strip()
+    confidence = float(event.get("confidence") or 0)
+    lines = [
+        f"## {heading}",
+        "",
+        f"- 标题：{event.get('title') or '未命名事件'}",
+        f"- 时间：`{event_time_window(event)}`",
+        f"- 地点：{location}",
+        f"- 处理状态：`{status}`",
+        f"- 日历目标：`{sink}`",
+        f"- 置信度：`{confidence:.2f}`",
+        f"- 来源邮件：{source_subject}",
+        f"- 发件人：{source_sender}",
+    ]
+    if reason:
+        lines.append(f"- 原因：{reason}")
+    if remote_event_link:
+        lines.append(f"- 日历链接：{remote_event_link}")
+    elif event.get("source_web_link"):
+        lines.append(f"- 邮件链接：{event['source_web_link']}")
+    return {
+        "event_type": event_type,
+        "title": heading,
+        "markdown": "\n".join(lines),
+        "severity": severity,
+    }
+
+
+def notify_new_event(
+    config: dict[str, Any],
+    event: dict[str, Any],
+    status: str,
+    sink: str,
+    *,
+    remote_event_id: str = "",
+    remote_event_link: str = "",
+) -> None:
+    if not notifications_enabled(config) or not new_event_alerts_enabled(config):
+        return
+    if status not in new_event_alert_statuses(config):
+        return
+    alert = build_new_event_alert(event, status, sink, remote_event_link)
+    payload = new_event_alert_payload(event, status, sink, remote_event_id, remote_event_link)
+    try:
+        send_notification(
+            config,
+            event_type=alert["event_type"],
+            title=alert["title"],
+            markdown=alert["markdown"],
+            severity=alert["severity"],
+            payload=payload,
+        )
+    except Exception as exc:
+        print(f"[{utc_now().isoformat()}] ERROR: failed to send new event notification: {exc}", file=sys.stderr)
+
+
 def query_processed_events(
     hours: int,
     limit: int,
@@ -2509,6 +2651,15 @@ def run_pipeline(args: argparse.Namespace, config: dict[str, Any]) -> None:
             result["action"] = "created"
             result["remote_event_id"] = remote_id
             result["remote_event_link"] = remote.get("htmlLink") or remote.get("webLink") or ""
+            if not args.force:
+                notify_new_event(
+                    config,
+                    event,
+                    "created",
+                    sink,
+                    remote_event_id=remote_id,
+                    remote_event_link=result["remote_event_link"],
+                )
         elif eligible:
             result["action"] = "dry_run"
         elif not event.get("is_event"):
@@ -2519,6 +2670,8 @@ def run_pipeline(args: argparse.Namespace, config: dict[str, Any]) -> None:
             result["action"] = "needs_review"
             if write:
                 record_event(conn, event, sink, "needs_review")
+                if not args.force:
+                    notify_new_event(config, event, "needs_review", sink)
         results[result_index] = result
         print_result(result)
 

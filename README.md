@@ -160,7 +160,7 @@ python3 /opt/outlook-event-agent/event_agent.py \
 
 ```mermaid
 flowchart LR
-  A["邮件日历服务"] -->|"daily_digest / fault / health_report"| B["Self-hosted Hermes"]
+  A["邮件日历服务"] -->|"new_event / event_needs_review / daily_digest / fault / health_report"| B["Self-hosted Hermes"]
   B --> C["微信 / QQ / 飞书"]
 ```
 
@@ -176,6 +176,8 @@ flowchart LR
     "notify_target": "hermes-webhook",
     "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
     "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
+    "new_event_alerts": true,
+    "new_event_alert_statuses": ["created", "needs_review"],
     "daily_digest_hours": 24,
     "fault_cooldown_minutes": 30
   }
@@ -217,7 +219,7 @@ systemctl list-timers outlook-event-agent-digest.timer
 webhook payload 统一包含：
 
 - `source`: 固定为 `outlook_event_automation`
-- `type`: `daily_digest`、`fault` 或 `health_report`
+- `type`: `new_event`、`event_needs_review`、`daily_digest`、`fault` 或 `health_report`
 - `severity`: `info`、`ok` 或 `error`
 - `title`: 消息标题
 - `markdown`: 适合 IM 展示的 Markdown 文本
@@ -225,6 +227,8 @@ webhook payload 统一包含：
 - `payload`: 结构化事件、统计或故障上下文
 
 服务常驻运行时，如果邮件读取、AI 抽取或日历写入抛出异常，会发送 `fault` 告警；`fault_cooldown_minutes` 用来避免同一个故障刷屏。
+服务从新邮件中记录出新活动时会立即发送事件级提醒：`created` 表示已经写入日历，
+`needs_review` 表示发现疑似活动但需要人工判断。重复邮件、dry run 和已忽略邮件不会推送。
 
 Hermes 或其他 agent 查询 API：
 

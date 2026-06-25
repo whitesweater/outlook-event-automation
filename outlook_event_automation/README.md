@@ -98,6 +98,8 @@ python3 event_agent.py --config config.local.json serve --write
     "notify_target": "hermes-webhook",
     "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
     "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
+    "new_event_alerts": true,
+    "new_event_alert_statuses": ["created", "needs_review"],
     "daily_digest_hours": 24,
     "fault_cooldown_minutes": 30
   }
@@ -130,6 +132,10 @@ python3 event_agent.py --config config.local.json health-report --dry-run --alwa
 ```
 
 常驻服务出现异常时会自动发送 `fault` payload，并用 `fault_cooldown_minutes` 避免刷屏。
+常驻服务每次从新邮件里记录出新的 `created` 或 `needs_review` 事件时，也会发送实时提醒：
+`created` 表示已写入目标日历，`needs_review` 表示像活动但需要人工确认。重复邮件、已处理邮件、
+dry run 和 `Daily Event Alert` 不会触发实时提醒。可以用
+`notifications.new_event_alert_statuses` 控制哪些状态需要推送。
 
 Hermes 或其他 agent 可以通过轻量 HTTP API 查询摘要和运行状态：
 

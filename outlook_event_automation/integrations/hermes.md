@@ -15,7 +15,7 @@
 flowchart LR
   A["Outlook / Gmail 邮件"] --> B["Outlook Event Automation"]
   B --> C["Outlook Calendar"]
-  B -->|"daily_digest / fault / health_report"| D["Hermes webhook route"]
+  B -->|"new_event / event_needs_review / daily_digest / fault / health_report"| D["Hermes webhook route"]
   D --> E["微信 / QQ / 飞书"]
   F["Hermes Agent"] -->|"Skill helper"| G["Outlook Event Automation HTTP API"]
   G --> C
@@ -63,6 +63,8 @@ flowchart LR
     "notify_target": "hermes-webhook",
     "hermes_webhook_url_env": "HERMES_WEBHOOK_URL",
     "hermes_webhook_secret_env": "HERMES_WEBHOOK_SECRET",
+    "new_event_alerts": true,
+    "new_event_alert_statuses": ["created", "needs_review"],
     "daily_digest_hours": 24,
     "fault_cooldown_minutes": 30
   },
@@ -192,6 +194,8 @@ platforms:
       routes:
         outlook-event-agent:
           events:
+            - new_event
+            - event_needs_review
             - daily_digest
             - fault
             - health_report
@@ -211,12 +215,12 @@ platforms:
 本项目发送给 Hermes 的 JSON envelope 包含：
 
 - `source`: 固定为 `outlook_event_automation`
-- `event_type`: `daily_digest`、`fault` 或 `health_report`
-- `severity`: `info`、`ok` 或 `error`
+- `event_type`: `new_event`、`event_needs_review`、`daily_digest`、`fault` 或 `health_report`
+- `severity`: `info`、`warning`、`ok` 或 `error`
 - `title`: 消息标题
 - `markdown`: 给 IM 展示的正文
 - `text`: 去掉简单 Markdown 后的纯文本
-- `payload`: 统计、事件列表、最近运行状态或故障上下文
+- `payload`: 新活动摘要、统计、事件列表、最近运行状态或故障上下文
 
 请求头包含：
 
@@ -234,6 +238,12 @@ sudo -u outlook-agent python3 event_agent.py \
   --config config.local.json notify-digest --hours 24 \
   --notify-target hermes-webhook
 ```
+
+实时事件提醒由常驻扫描自动触发：当一封新邮件第一次被记录为 `created` 时，Hermes 会收到
+`new_event` 并推送“新活动已加入日历”；当它被记录为 `needs_review` 时，Hermes 会收到
+`event_needs_review` 并推送“发现疑似新活动，需要确认”。重复邮件、已处理邮件、dry run、
+`ignored` 和 `Daily Event Alert` 不会触发实时提醒。可以用
+`notifications.new_event_alert_statuses` 控制哪些状态会推送。
 
 ## 5. 配置 Hermes Skill 查询与新增日程
 
