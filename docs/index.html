@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Outlook / Gmail Event Agent | 水豚噜噜值班台</title>
-  <meta name="description" content="一个把 Outlook 和 Gmail 活动邮件自动抽取为可信日历事件的常驻服务主页。">
+  <meta name="description" content="一个把 Outlook 和 Gmail 活动邮件通过短间隔在线扫描自动抽取为可信日历事件，并由 Hermes 负责查询与提醒的常驻主页。">
   <link rel="preload" href="assets/lulu-hero.png" as="image">
   <style>
     :root {
@@ -697,8 +697,8 @@
         <p>账号通知、普通提醒、汇总邮件会被过滤；像活动但不够稳的内容进入复核，不直接污染日历。</p>
       </article>
       <article class="workflow-card reveal">
-        <b>默认批量抽取</b>
-        <p>每批 20 封邮件，失败后自动拆批，避免单个上游错误拖住整轮处理。</p>
+        <b>在线默认只看最新 1 封</b>
+        <p>常驻模式每轮处理最新 1 封邮件；离线补处理才批量回扫 20 / 50 封，避免把在线轮询做成大批量重扫。</p>
       </article>
       <article class="workflow-card reveal">
         <b>可追溯写入</b>
@@ -727,7 +727,7 @@
         </article>
         <article class="tile reveal">
           <h3>Hermes 能查能提醒</h3>
-          <p>自托管 Hermes 可查询近期日程、推送日报和健康报告。创建 Outlook 事件前需要用户确认。</p>
+          <p>自托管 Hermes 负责 <code>daily_digest</code>、<code>fault</code>、<code>health_report</code>，也负责 <code>new_event</code> / <code>event_needs_review</code> 的微信 / QQ 提醒、交互式查询和新增确认。</p>
         </article>
       </div>
     </section>
@@ -742,12 +742,12 @@
             <p>Outlook 通过 Microsoft Graph 读取 <code>/me/messages</code> 或指定 mailbox；Gmail 通过 Gmail API 读取邮件正文。</p>
           </article>
           <article class="step reveal">
-            <h3>前置过滤</h3>
-            <p><code>Daily Event Alert</code> 汇总邮件直接忽略；取消和撤回类邮件强制复核，不自动创建。</p>
+            <h3>事实抽取后再决策</h3>
+            <p>AI 只负责抽取标题、时间、地点等事实，Python 规则再做保守决策；<code>extraction.auto_ignore_keywords</code> 维护 <code>Daily Event Alert</code>、消防演练、发电机负载测试等噪声词。</p>
           </article>
           <article class="step reveal">
             <h3>结构化抽取</h3>
-            <p>Responses API 返回 JSON schema 约束结果，每封邮件得到一个明确状态和原因。</p>
+            <p>Responses API 返回 JSON schema 约束结果，每封邮件先拿到结构化事实，再由本地规则决定 <code>created</code>、<code>needs_review</code> 或 <code>ignored</code>。</p>
           </article>
           <article class="step reveal">
             <h3>写入与审计</h3>
@@ -757,11 +757,11 @@
 
         <div class="code-panel reveal">
           <div class="code-title">event_agent.py</div>
-          <pre><code><span class="comment"># 常驻循环：读邮件 -> 抽取 -> 判断 -> 写日历</span>
+          <pre><code><span class="comment"># 常驻在线：每轮只处理最新 1 封</span>
 <span class="keyword">python3</span> event_agent.py \
   --config config.local.json serve --write
 
-<span class="comment"># 批量抽取默认配置</span>
+<span class="comment"># 离线补处理：按需回扫 20 / 50 封</span>
 extraction.batch_size = <span class="number">20</span>
 calendar.include_source_email_body = true
 
@@ -791,7 +791,7 @@ POST /calendar-events  <span class="comment"># confirmed: true</span></code></pr
         </article>
         <article class="status reveal">
           <b>ignored</b>
-          <p>明确不是日程，或者命中特定噪声规则，例如 Daily Event Alert 汇总邮件。</p>
+          <p>明确不是日程，或者命中特定噪声规则，例如 Daily Event Alert、消防演练、发电机负载测试。</p>
         </article>
       </div>
     </section>
@@ -802,18 +802,18 @@ POST /calendar-events  <span class="comment"># confirmed: true</span></code></pr
       <div class="operations">
         <article class="panel reveal">
           <h3>推送</h3>
-          <p>服务可以生成 <code>daily_digest</code>、<code>fault</code> 和 <code>health_report</code>，通过 <code>HERMES_WEBHOOK_URL</code> 发到自托管 route。</p>
+          <p>服务可以生成 <code>daily_digest</code>、<code>fault</code>、<code>health_report</code>，以及 <code>new_event</code> / <code>event_needs_review</code> 的微信 / QQ 提醒，通过 <code>HERMES_WEBHOOK_URL</code> 发到自托管 route；投递失败会进入健康报告，微信限流可在 Hermes 运行配置里重试或切 QQ fallback 排障。</p>
         </article>
         <article class="panel reveal">
           <h3>查询与创建</h3>
-          <p>Hermes 可读取 <code>/agenda</code>、<code>/agenda-range</code>、<code>/digest</code>、<code>/events</code> 和 <code>/health</code>。新增日程必须先确认标题、日期、时间、时区和日历目标。</p>
+          <p>Hermes 可读取 <code>/agenda</code>、<code>/agenda-range</code>、<code>/digest</code>、<code>/events</code> 和 <code>/health</code>；<code>new_event</code> / <code>event_needs_review</code> 支持交互式查询、确认新增，新增日程必须先确认标题、日期、时间、时区和日历目标。</p>
         </article>
       </div>
     </section>
 
     <section class="section" id="deploy">
       <h2>部署到服务器</h2>
-      <p>生产环境不要提交 <code>.env</code>、<code>config.local.json</code>、SQLite 数据库或扫描日志。</p>
+      <p>当前生产仍以短间隔在线扫描为主，事件驱动 Graph webhook 是下一阶段方向。生产环境不要提交 <code>.env</code>、<code>config.local.json</code>、SQLite 数据库或扫描日志。</p>
       <div class="code-panel reveal">
         <div class="code-title">Quickstart</div>
         <pre><code><span class="keyword">cd</span> outlook_event_automation

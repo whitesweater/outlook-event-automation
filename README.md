@@ -10,7 +10,7 @@
 
 你可以把它理解成一个很保守的日历助理：
 
-- 新邮件进入目标邮箱后，服务按固定间隔读取最近邮件。
+- 新邮件进入目标邮箱后，服务按短间隔在线扫描读取最新邮件；服务中断后再用离线批量补处理回扫历史邮件。
 - AI 提取活动标题、开始时间、结束时间、地点、组织者和摘要。
 - 明确不是活动的邮件会被标记为 `ignored`。
 - 多活动汇总、取消通知、撤回通知、时间不完整或信息冲突的邮件会进入 `needs_review`。
@@ -19,6 +19,8 @@
 
 默认提示词会尽量把事件标题、说明、地点和复核原因写成中文，同时保留机构名、项目名、房间号等不适合翻译的专有名词。
 
+当前生产实现仍是短间隔在线扫描，不是 Microsoft Graph webhook 事件驱动。Graph subscription 可以作为下一阶段优化，但需要公网 HTTPS 回调、订阅续期和失败重放机制。
+
 ## 给开发者看的
 
 核心流程是：
@@ -26,7 +28,7 @@
 ```mermaid
 flowchart LR
   A["Outlook / Gmail 邮件"] --> B["前置规则过滤"]
-  B --> C["Responses API 批量抽取"]
+  B --> C["Responses API 抽取"]
   C --> D{"状态判断"}
   D -->|"created"| E["Outlook / Google Calendar"]
   D -->|"ignored / needs_review / dry_run"| F["SQLite 审计与去重"]
@@ -38,11 +40,12 @@ flowchart LR
 - 邮件源：Microsoft Graph 读取 Outlook，Gmail API 读取 Gmail。
 - 日历端：Microsoft Graph 写 Outlook Calendar，Google Calendar API 写 Google Calendar。
 - AI 抽取：使用 Responses API 的 JSON schema 输出，每封邮件返回一个结构化判断。
-- 批处理：默认 `batch_size = 20`；模型或代理失败时会自动拆批重试。
-- 守护规则：`Daily Event Alert` 直接忽略；取消、撤回、多活动或缺时间强制复核。
+- 在线/离线：常驻模式推荐 `max_messages_per_poll = 1`，来一封处理一封；离线补处理用 `--limit N --batch-size 20` 回扫漏掉的邮件。
+- 批处理：离线或手动回扫默认 `batch_size = 20`；模型或代理失败时会自动拆批重试。
+- 守护规则：`Daily Event Alert` 和 `extraction.auto_ignore_keywords` 直接忽略；取消、撤回、多活动或缺时间强制复核。
 - 去重审计：SQLite 记录 source message id、dedupe key、处理状态和远端 event id。
 - 常驻运行：`serve --write` 可由 systemd 托管，适合部署在小型服务器上。
-- 自动推送：通过 Hermes-compatible webhook 产出日报和故障告警，由自托管 Hermes 转发到微信、QQ、飞书。
+- 自动推送：通过 Hermes-compatible webhook 产出 `new_event`、`event_needs_review`、日报、故障告警和健康报告，由自托管 Hermes 转发到微信、QQ、飞书。
 - Agent 查询：提供轻量 HTTP API，方便 Hermes skill 或其他 agent 交互式读取活动摘要与运行状态。
 
 ## 目录结构
@@ -83,6 +86,7 @@ cp .env.example .env
 - `calendar.sink`: `outlook`、`google` 或 `none`
 - `extraction.openai_model`: Responses API 使用的模型名
 - `extraction.batch_size`: 每次模型请求处理的邮件数量
+- `extraction.auto_ignore_keywords`: 不进入个人日历的噪声活动关键词，例如消防演练、发电机负载测试
 - `calendar.include_source_email_body`: 是否把原始邮件正文附到日历事件里
 
 编辑 `.env`：
@@ -124,6 +128,19 @@ python3 event_agent.py --config config.local.json run \
   --source outlook --sink outlook --limit 20 --write
 ```
 
+常驻在线模式默认每轮只读最新 1 封，适合服务器长期运行：
+
+```bash
+python3 event_agent.py --config config.local.json serve --write
+```
+
+服务中断后，用离线补处理回扫最近邮件：
+
+```bash
+python3 event_agent.py --config config.local.json run \
+  --source outlook --sink outlook --limit 50 --batch-size 20 --write
+```
+
 ## 常驻部署
 
 安装 systemd 服务：
@@ -154,7 +171,7 @@ python3 /opt/outlook-event-agent/event_agent.py \
 
 ## 自托管 Hermes 集成
 
-这个组件不直接绑定某一个 IM 平台。当前生产路径使用自托管 Hermes：本服务主动发送 Hermes webhook，Hermes 负责转发到 `weixin`、`qqbot` 或 `feishu`，并通过 `outlook-mail-events` skill 查询和新增 Outlook 日程。
+这个组件不直接绑定某一个 IM 平台。当前生产路径使用自托管 Hermes：本服务主动发送 Hermes webhook，Hermes 负责转发到 `weixin`、`qqbot` 或 `feishu`，并通过 `outlook-mail-events` skill 查询和新增 Outlook 日程。不要修改 Hermes 源码；项目适配放在 Hermes home 的 `config.yaml`、`skills/`、`scripts/` 和 `bin/`。
 
 推荐自托管 Hermes 架构：
 
@@ -229,6 +246,7 @@ webhook payload 统一包含：
 服务常驻运行时，如果邮件读取、AI 抽取或日历写入抛出异常，会发送 `fault` 告警；`fault_cooldown_minutes` 用来避免同一个故障刷屏。
 服务从新邮件中记录出新活动时会立即发送事件级提醒：`created` 表示已经写入日历，
 `needs_review` 表示发现疑似活动但需要人工判断。重复邮件、dry run 和已忽略邮件不会推送。
+本服务自己的 webhook 通知失败会记录在 `data/notification_state.json`，并进入 `health-report`；如果是 Hermes Cron 直接投递日报失败，请看 `hermes cron list/status` 的 `last_delivery_error`，并按 `integrations/hermes.md` 配置微信重试或 QQ fallback。
 
 Hermes 或其他 agent 查询 API：
 
@@ -276,6 +294,6 @@ curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
 主页内容分成两层：
 
 - 给用户：解释它怎么把邮件变成日历事件，以及为什么有些邮件不会自动写入。
-- 给开发者：解释 API、批量抽取、状态机、SQLite 去重和 systemd 部署方式。
+- 给开发者：解释 API、在线/离线处理、状态机、SQLite 去重、Hermes 联动和 systemd 部署方式。
 
 主页动效使用 GSAP timeline 与 ScrollTrigger，动效承担“解释流程”的职责，而不是只做装饰。

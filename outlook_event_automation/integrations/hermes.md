@@ -245,6 +245,10 @@ sudo -u outlook-agent python3 event_agent.py \
 `ignored` 和 `Daily Event Alert` 不会触发实时提醒。可以用
 `notifications.new_event_alert_statuses` 控制哪些状态会推送。
 
+如果某类活动不应该进入个人日历，也不应该触发新事件提醒，把关键词加入
+`extraction.auto_ignore_keywords`。这些关键词会在 AI 抽取前后各检查一次；命中后记录为
+`ignored`。适合放运营类通知，例如消防演练、发电机负载测试、设备测试等。
+
 ## 5. 配置 Hermes Skill 查询与新增日程
 
 Hermes Agent 需要一个 helper 来访问本项目 API。helper 放在 Hermes home，不放在 Hermes 源码目录。查询命令是只读的；新增日程必须走 `create-event-json`，并且 API 请求体要包含 `confirmed: true`。
@@ -466,6 +470,37 @@ HERMES_HOME=/opt/hermes-agent/home \
   /opt/hermes-agent/app/venv/bin/hermes send --list
 ```
 
+如果微信通道容易触发短时间限流，可以在 Hermes `config.yaml` 的微信平台配置里增加重试参数。不同 Hermes 版本的配置结构可能略有差异，生产环境以 `hermes doctor` 和实际 `config.yaml` schema 为准；本项目使用的是 top-level `platforms.weixin.extra`：
+
+```yaml
+platforms:
+  weixin:
+    extra:
+      send_chunk_retries: 6
+      send_chunk_retry_delay_seconds: 12
+      rate_limit_circuit_threshold: 10
+      rate_limit_circuit_window_seconds: 60
+      rate_limit_circuit_open_seconds: 30
+```
+
+更新后重启 Hermes：
+
+```bash
+sudo systemctl restart hermes-agent.service
+systemctl is-active hermes-agent.service
+```
+
+如果要临时兜底，把 cron 目标改成已经绑定的 QQ：
+
+```bash
+cd /opt/hermes-agent
+HERMES_HOME=/opt/hermes-agent/home \
+  /opt/hermes-agent/app/venv/bin/hermes cron edit daily-outlook-agenda \
+  --deliver 'qqbot:<chat_id>'
+```
+
+也可以保留微信日报，把故障/人工提醒 route 配到 QQ 或飞书。关键是：通道绑定和限流属于 Hermes 运行配置，不要修改 Hermes 源码。
+
 ## 7. 运维检查清单
 
 服务状态：
@@ -490,6 +525,10 @@ journalctl -u hermes-agent.service -n 100 --no-pager
 # 1. Outlook agent API
 curl -H "Authorization: Bearer $OUTLOOK_AGENT_API_TOKEN" \
   http://127.0.0.1:8791/health
+
+# 1b. 本服务 webhook 通知健康报告
+cd /opt/outlook-event-agent
+python3 event_agent.py --config config.local.json health-report --dry-run --always
 
 # 2. 今日/未来一周日程
 /opt/hermes-agent/home/bin/outlook-mail-events agenda today 50
@@ -543,10 +582,44 @@ Microsoft Graph 可能返回 `2026-06-24T15:40:00.0000000` 这类 7 位小数秒
 4. `outlook-mail-events agenda today 50` 是否有输出。
 5. `hermes send --list` 中目标是否仍然绑定。
 
+建议按下面顺序定位：
+
+```bash
+# 1. 三个服务都应该是 active
+systemctl is-active outlook-event-agent.service
+systemctl is-active outlook-event-agent-api.service
+systemctl is-active hermes-agent.service
+
+# 2. 看 cron 上次运行和投递错误
+HERMES_HOME=/opt/hermes-agent/home \
+  /opt/hermes-agent/app/venv/bin/hermes cron list
+HERMES_HOME=/opt/hermes-agent/home \
+  /opt/hermes-agent/app/venv/bin/hermes cron status
+
+# 3. 直接跑脚本，确认本项目 API 能返回今日日程
+sudo -u ubuntu /opt/hermes-agent/home/scripts/daily-outlook-agenda.sh
+
+# 4. 单独测试投递目标
+HERMES_HOME=/opt/hermes-agent/home \
+  /opt/hermes-agent/app/venv/bin/hermes send --to weixin "Hermes 投递测试"
+```
+
+如果 `last_delivery_error` 里出现 `rate limited` 或 cooldown 文案，通常不是 Outlook 日程查询失败，而是微信通道被限流。先等待 cooldown，再用上面的微信重试配置；仍不稳定时，把日报或故障告警切到 QQ fallback。
+
+如果要立刻补发一次日报：
+
+```bash
+HERMES_HOME=/opt/hermes-agent/home \
+  /opt/hermes-agent/app/venv/bin/hermes cron run daily-outlook-agenda
+HERMES_HOME=/opt/hermes-agent/home \
+  /opt/hermes-agent/app/venv/bin/hermes cron tick
+```
+
 ## 9. 维护原则
 
 - 密钥只放 `.env`，不要写进 Git、README、Hermes skill 或脚本。
 - Hermes 源码目录只作为上游程序使用；项目适配放在 Hermes home 的 `config.yaml`、`skills/`、`scripts/`、`bin/`。
 - 本项目 HTTP API 默认只读。只有确实要让 Hermes 管理日程时才开启 `allow_write_actions=true`，并保留 `confirmed: true` 确认流程。
 - 交互式查询用 `/agenda`、`/agenda-range`、`/digest`、`/review`、`/health`；新增用户确认过的日程用 `/calendar-events`。
-- 改动后至少验证：`python3 -m py_compile event_agent.py`、API `/health`、helper `agenda-range`、`create-event-json` dry run、Hermes skill 查询。
+- 本服务主动发送 webhook 的失败会写入 `data/notification_state.json` 并出现在 `health-report`；Hermes Cron 直接投递失败要看 `hermes cron list/status`。
+- 改动后至少验证：`python3 -m py_compile event_agent.py`、API `/health`、helper `agenda-range`、`create-event-json` dry run、Hermes skill 查询、Hermes Cron 日报投递。

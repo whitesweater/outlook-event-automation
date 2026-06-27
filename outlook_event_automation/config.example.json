@@ -49,6 +49,18 @@
     "batch_body_limit": 6000,
     "default_timezone": "Asia/Shanghai",
     "confidence_threshold": 0.75,
+    "auto_ignore_keywords": [
+      "Daily Event Alert",
+      "发电机",
+      "generator",
+      "负载测试",
+      "load test",
+      "用力测试",
+      "消防演练",
+      "fire drill",
+      "fire evacuation drill",
+      "evacuation drill"
+    ],
     "event_keywords": [
       "event",
       "seminar",
@@ -77,7 +89,7 @@
   },
   "service": {
     "poll_seconds": 30,
-    "max_messages_per_poll": 10
+    "max_messages_per_poll": 1
   },
   "notifications": {
     "enabled": false,

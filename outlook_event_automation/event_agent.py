@@ -1713,11 +1713,61 @@ def ignored_event(message: SourceMessage, config: dict[str, Any], reason: str) -
     return normalize_event(event, message, config)
 
 
-def should_ignore_without_ai(message: SourceMessage) -> tuple[bool, str]:
+def auto_ignore_keywords(config: dict[str, Any]) -> list[str]:
+    value = config.get("extraction", {}).get("auto_ignore_keywords", [])
+    if isinstance(value, str):
+        candidates = re.split(r"[\n,，]+", value)
+    elif isinstance(value, list):
+        candidates = [str(item) for item in value]
+    else:
+        candidates = []
+    return [item.strip() for item in candidates if item.strip()]
+
+
+def matched_auto_ignore_keyword(text: str, config: dict[str, Any]) -> str:
+    lowered = text.lower()
+    for keyword in auto_ignore_keywords(config):
+        if keyword.lower() in lowered:
+            return keyword
+    return ""
+
+
+def auto_ignore_reason(keyword: str) -> str:
+    return f"命中自动忽略关键词“{keyword}”，这类运营/安全通知不写入个人日历。"
+
+
+def should_ignore_without_ai(message: SourceMessage, config: dict[str, Any]) -> tuple[bool, str]:
     subject = message.subject.strip().lower()
     if "daily event alert" in subject:
         return True, "Daily Event Alert 是活动汇总邮件，按规则直接忽略。"
+    matched = matched_auto_ignore_keyword(f"{message.subject}\n{message.body_text[:4000]}", config)
+    if matched:
+        return True, auto_ignore_reason(matched)
     return False, ""
+
+
+def apply_auto_ignore_filter(event: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    haystack = "\n".join(
+        [
+            str(event.get("title", "")),
+            str(event.get("location", "")),
+            str(event.get("description", "")),
+            str(event.get("organizer", "")),
+            str(event.get("reason", "")),
+            str(event.get("source_subject", "")),
+            str(event.get("source_sender", "")),
+            str(event.get("source_body_text", ""))[:4000],
+        ]
+    )
+    matched = matched_auto_ignore_keyword(haystack, config)
+    if not matched:
+        return event
+    filtered = dict(event)
+    filtered["is_event"] = False
+    filtered["requires_review"] = False
+    filtered["confidence"] = 1.0
+    filtered["reason"] = auto_ignore_reason(matched)
+    return filtered
 
 
 def record_event(
@@ -1835,27 +1885,32 @@ def send_notification(
         severity=severity,
         payload=payload,
     )
-    if selected == "webhook":
-        provider = notify.get("provider", "webhook")
-        if provider != "webhook":
-            raise AgentError(f"Unsupported notification provider: {provider}")
-        url = notification_webhook_url(config)
-        if not url:
-            raise AgentError(
-                "Notification webhook URL is missing. Set NOTIFY_WEBHOOK_URL or "
-                "notifications.webhook_url."
+    try:
+        if selected == "webhook":
+            provider = notify.get("provider", "webhook")
+            if provider != "webhook":
+                raise AgentError(f"Unsupported notification provider: {provider}")
+            url = notification_webhook_url(config)
+            if not url:
+                raise AgentError(
+                    "Notification webhook URL is missing. Set NOTIFY_WEBHOOK_URL or "
+                    "notifications.webhook_url."
+                )
+            status, _ = http_post_raw(
+                url,
+                payload=envelope,
+                headers=notification_headers(config),
+                timeout=int(notify.get("webhook_timeout_seconds", 30)),
             )
-        status, _ = http_post_raw(
-            url,
-            payload=envelope,
-            headers=notification_headers(config),
-            timeout=int(notify.get("webhook_timeout_seconds", 30)),
-        )
-    elif selected == "hermes-webhook":
-        status, _ = send_hermes_webhook(config, envelope)
-    else:
-        raise AgentError(f"Unsupported notify target: {selected}")
+        elif selected == "hermes-webhook":
+            status, _ = send_hermes_webhook(config, envelope)
+        else:
+            raise AgentError(f"Unsupported notify target: {selected}")
+    except Exception as exc:
+        mark_notification_failure(event_type, str(exc))
+        raise
     print(f"Notification sent: target={selected} type={event_type} status={status}")
+    mark_notification_success(event_type)
     return True
 
 
@@ -1936,6 +1991,28 @@ def mark_notification_sent(event_type: str) -> None:
     last_sent = dict(state.get("last_sent", {}))
     last_sent[event_type] = utc_now().isoformat()
     state["last_sent"] = last_sent
+    save_notification_state(state)
+
+
+def mark_notification_success(event_type: str) -> None:
+    state = load_notification_state()
+    last_success = dict(state.get("last_success", {}))
+    last_success[event_type] = utc_now().isoformat()
+    state["last_success"] = last_success
+    last_failure = dict(state.get("last_failure", {}))
+    last_failure.pop(event_type, None)
+    state["last_failure"] = last_failure
+    save_notification_state(state)
+
+
+def mark_notification_failure(event_type: str, error: str) -> None:
+    state = load_notification_state()
+    last_failure = dict(state.get("last_failure", {}))
+    last_failure[event_type] = {
+        "at": utc_now().isoformat(),
+        "error": error[:500],
+    }
+    state["last_failure"] = last_failure
     save_notification_state(state)
 
 
@@ -2252,6 +2329,16 @@ def build_health_report(config: dict[str, Any], max_age_minutes: int) -> dict[st
     actions = Counter(str(item.get("action", "unknown")) for item in results if isinstance(item, dict))
     if actions.get("extraction_failed", 0):
         issues.append(f"最近一次运行有 {actions['extraction_failed']} 封邮件 AI 抽取失败。")
+    notification_state = load_notification_state()
+    notification_failures = notification_state.get("last_failure", {})
+    if isinstance(notification_failures, dict):
+        for event_type, failure in sorted(notification_failures.items()):
+            if not isinstance(failure, dict):
+                continue
+            failed_at = str(failure.get("at", "")).strip()
+            error = re.sub(r"\s+", " ", str(failure.get("error", ""))).strip()
+            detail = f"{failed_at}；{error[:180]}" if error else failed_at
+            issues.append(f"通知 `{event_type}` 最近发送失败：{detail}")
     severity = "error" if issues else "ok"
     lines = [
         "## 邮件日历服务健康报告",
@@ -2269,7 +2356,12 @@ def build_health_report(config: dict[str, Any], max_age_minutes: int) -> dict[st
         "severity": severity,
         "title": "邮件日历服务健康报告",
         "markdown": "\n".join(lines),
-        "payload": {"issues": issues, "actions": dict(actions), "last_run": last_run},
+        "payload": {
+            "issues": issues,
+            "actions": dict(actions),
+            "last_run": last_run,
+            "notification_state": notification_state,
+        },
     }
 
 
@@ -2603,7 +2695,7 @@ def run_pipeline(args: argparse.Namespace, config: dict[str, Any]) -> None:
             results.append(result)
             print_result(result)
             continue
-        ignore, ignore_reason = should_ignore_without_ai(message)
+        ignore, ignore_reason = should_ignore_without_ai(message, config)
         if ignore:
             event = ignored_event(message, config, ignore_reason)
             result = {
@@ -2626,7 +2718,8 @@ def run_pipeline(args: argparse.Namespace, config: dict[str, Any]) -> None:
     else:
         events = []
 
-    for (result_index, message), event in zip(pending, events):
+    for (result_index, message), extracted_event in zip(pending, events):
+        event = apply_auto_ignore_filter(extracted_event, config)
         eligible = bool(
             event.get("is_event")
             and float(event.get("confidence", 0)) >= threshold
