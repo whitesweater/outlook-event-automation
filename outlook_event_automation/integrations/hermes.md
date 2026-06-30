@@ -208,7 +208,8 @@ platforms:
 说明：
 
 - `secret` 要和本项目 `.env` 的 `HERMES_WEBHOOK_SECRET` 一致。
-- `deliver` 填已经绑定好的 Hermes 目标，例如 `weixin`、`qqbot:<chat_id>`、`feishu` 等。
+- `prompt` 必须使用 `{markdown}` 或 `{text}`。不要用 `{__raw__}`，否则微信/QQ 会收到完整 JSON envelope，中文字段也可能显示成 `\u53d1\u73b0...` 这类 Unicode 转义。
+- webhook route 的 `deliver` 只填平台名，例如 `weixin`、`qqbot`、`feishu` 或 `log`。`qqbot:<chat_id>` 这种精确目标格式适用于 `hermes send` 和 `hermes cron`，不适用于 webhook route。
 - `deliver_only: true` 表示不调用模型，直接把 `prompt` 投递到 IM。
 - webhook 建议只监听内网或 loopback；需要公网访问时放到 HTTPS 反代后面。
 
@@ -490,7 +491,17 @@ sudo systemctl restart hermes-agent.service
 systemctl is-active hermes-agent.service
 ```
 
-如果要临时兜底，把 cron 目标改成已经绑定的 QQ：
+如果要临时兜底，把 webhook route 改成 QQ 平台，把 cron 目标改成已经绑定的 QQ chat：
+
+```yaml
+platforms:
+  webhook:
+    extra:
+      routes:
+        outlook-event-agent:
+          deliver: qqbot
+          prompt: "{markdown}"
+```
 
 ```bash
 cd /opt/hermes-agent
@@ -499,7 +510,7 @@ HERMES_HOME=/opt/hermes-agent/home \
   --deliver 'qqbot:<chat_id>'
 ```
 
-也可以保留微信日报，把故障/人工提醒 route 配到 QQ 或飞书。关键是：通道绑定和限流属于 Hermes 运行配置，不要修改 Hermes 源码。
+也可以保留微信日报，把故障/人工提醒 route 配到 QQ 或飞书。关键是：通道绑定和限流属于 Hermes 运行配置，不要修改 Hermes 源码。改完 `config.yaml` 后重启 Hermes；如果旧进程正在被微信限流拖住并长时间停在 `deactivating`，先确认日志里确实是旧微信投递在退避，再回收旧 gateway 进程并启动新进程。
 
 ## 7. 运维检查清单
 
@@ -605,6 +616,31 @@ HERMES_HOME=/opt/hermes-agent/home \
 ```
 
 如果 `last_delivery_error` 里出现 `rate limited` 或 cooldown 文案，通常不是 Outlook 日程查询失败，而是微信通道被限流。先等待 cooldown，再用上面的微信重试配置；仍不稳定时，把日报或故障告警切到 QQ fallback。
+
+如果 `hermes cron list` 显示 `Last run ... ok`，但 IM 没收到，继续看 `journalctl -u hermes-agent.service`。脚本运行成功只代表 `daily-outlook-agenda.sh` 产出了内容；最终是否投递到微信/QQ，还要看 Hermes 平台日志。
+
+### 微信/QQ 推送显示完整 JSON 或 `\uXXXX` 转义
+
+这通常是 webhook route 的 `prompt` 写成了 `{__raw__}`，Hermes 把整个请求体直接投递了。修复方式：
+
+```yaml
+platforms:
+  webhook:
+    extra:
+      routes:
+        outlook-event-agent:
+          prompt: "{markdown}"
+```
+
+然后重启 Hermes，并用健康报告验证：
+
+```bash
+cd /opt/outlook-event-agent
+sudo python3 event_agent.py --config config.local.json \
+  health-report --always --notify-target hermes-webhook
+```
+
+成功时命令会打印 `Notification sent: target=hermes-webhook type=health_report status=200`，IM 中应该只出现中文 Markdown 摘要，不应该出现完整 JSON。
 
 如果要立刻补发一次日报：
 
